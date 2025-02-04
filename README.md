@@ -1,19 +1,5 @@
-# recommendation-system
+# Planwise Recommendation System
 
-## How to run API
+## Overview
 
-1. Create a virtual environment
-```bash
-cd api
-python3 -m venv venv
-```
-
-2. Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-3. Run the API
-```bash
-fastapi dev main.py
-```
+This is a recommendation system for Planwise. It is a web application that allows users to get recommendations for plans based on their interests.
