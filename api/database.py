@@ -1,15 +1,28 @@
-
-#how our backend connects to the database:
-
-from sqlalchemy import create_engine, MetaData
-from sqlalchemy.orm import sessionmaker, declarative_base
 import os
+from sqlmodel import create_engine, SQLModel, Session
 
-DATABASE_URL = "postgresql://alexandrakhreiche:alexa@localhost/travel_db"
+
+# initializes the database depending on the environment
+
+
+
+DBUSER = os.environ.get("DBUSER")
+DBPASS = os.environ.get("DBPASS")
+DBHOST = os.environ.get("DBHOST")
+DBNAME = os.environ.get("DBNAME")
+DBPORT = os.environ.get("DBPORT")
+
+
+DATABASE_URL = f"postgresql://{DBUSER}:{DBPASS}@{DBHOST}:{DBPORT}/{DBNAME}"
 
 engine = create_engine(DATABASE_URL)
-# SessionLocal() to handle database transactions (i.e., read/write data)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-#Base = declarative_base() to allow us to define tables as Python classes.
-Base = declarative_base()
+
+
+def init_db():
+    SQLModel.metadata.create_all(engine)
+
+
+def get_db():
+    with Session(engine) as session:
+        yield session
 
