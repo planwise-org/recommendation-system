@@ -21,4 +21,5 @@ async def read_root():
     return {"message": "Planwise says Hello World!"}
 
 # simple setup for including the router page
-app.include_router(users)
+app.include_router(users, prefix="/users", tags=["Users"])
+
