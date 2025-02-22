@@ -1,10 +1,5 @@
 from fastapi import FastAPI
-from src.routes.users import users
-from database import init_db, get_session
-
-
-
-
+from .routes import users
 
 app = FastAPI()
 
