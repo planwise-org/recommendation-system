@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  fastapi:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - ENV=dev
+      - DBUSER=user
+      - DBPASS=password
+      - DBHOST=db
+      - DBPORT=5432
+      - DBNAME=planwise
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    # volumes:
+    #  - postgres_data/var/lib/postgresql/data/
+    environment:
+     - POSTGRES_USER=user
+     - POSTGRES_PASSWORD=password
+     - POSTGRES_DB=planwise
+    ports:
+      - "5431:5432"
+
+  # volumes:
+  #   postgres_data:
