@@ -2,10 +2,7 @@ import os
 from sqlmodel import create_engine, SQLModel, Session
 
 
-# initializes the database depending on the environment
-
-
-
+# Creates a connection to the database according to the env variables
 DBUSER = os.environ.get("DBUSER")
 DBPASS = os.environ.get("DBPASS")
 DBHOST = os.environ.get("DBHOST")
@@ -25,4 +22,3 @@ def init_db():
 def get_db():
     with Session(engine) as session:
         yield session
-
