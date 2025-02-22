@@ -1,7 +1,13 @@
-*.db
+# Large data files
+api/combined_google_review_ratings.csv
+api/new_dataset.csv
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
 venv/
 .venv/
-__pycache__/
-*.pyc
 .DS_Store
-api/new_dataset.csv
