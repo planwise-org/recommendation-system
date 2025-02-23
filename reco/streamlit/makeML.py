@@ -141,6 +141,7 @@ plt.show()
 # ---------------------------
 # 6) Save the underlying base_model + scaler
 # ---------------------------
-base_model.save("autoencoder.h5")
-joblib.dump(scaler, "scaler.save")
+BASE_PATH = "reco/streamlit/"
+base_model.save(BASE_PATH + "autoencoder.h5")
+joblib.dump(scaler, BASE_PATH + "scaler.save")
 print("Deeper Weighted Denoising Autoencoder and scaler saved!")
