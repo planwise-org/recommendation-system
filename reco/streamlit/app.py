@@ -8,7 +8,7 @@ import pydeck as pdk
 import networkx as nx
 import openrouteservice
 from openrouteservice import convert
-
+import os
 # For SVD-based recommendations:
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
@@ -68,7 +68,7 @@ def show_map(recs, ors_key):
             route_coords = optimized_data[['lon', 'lat']].values.tolist()
         else:
             optimized_data = map_df.copy()
-        
+
         # Create a TextLayer for place names.
         text_layer = pdk.Layer(
             "TextLayer",
@@ -106,10 +106,10 @@ def show_map(recs, ors_key):
 # Constants and Mappings
 # ---------------------------
 categories = [
-    "resorts", "burger/pizza shops", "hotels/other lodgings", "juice bars", "beauty & spas", 
-    "gardens", "amusement parks", "farmer market", "market", "music halls", "nature", 
-    "tourist attractions", "beaches", "parks", "theatres", "museums", "malls", "restaurants", 
-    "pubs/bars", "local services", "art galleries", "dance clubs", "swimming pools", "bakeries", 
+    "resorts", "burger/pizza shops", "hotels/other lodgings", "juice bars", "beauty & spas",
+    "gardens", "amusement parks", "farmer market", "market", "music halls", "nature",
+    "tourist attractions", "beaches", "parks", "theatres", "museums", "malls", "restaurants",
+    "pubs/bars", "local services", "art galleries", "dance clubs", "swimming pools", "bakeries",
     "cafes", "view points", "monuments", "zoo", "supermarket"
 ]
 
@@ -148,11 +148,19 @@ category_to_place_types = {
 # ---------------------------
 # Load Resources (Autoencoder Model, Scaler, Places Data)
 # ---------------------------
+BASE_PATH = "reco/streamlit/"
 @st.cache(allow_output_mutation=True)
 def load_resources():
-    auto_model = load_model("autoencoder.h5")
-    scaler = joblib.load("scaler.save")
-    places = pd.read_csv("combined_places.csv")
+    # paths are different when running in Streamlit sharing than locally
+    if os.environ.get("ENV") == "prod":
+        auto_model = load_model(BASE_PATH + "autoencoder.h5")
+        scaler = joblib.load(BASE_PATH + "scaler.save")
+        places = pd.read_csv(BASE_PATH + "combined_places.csv")
+    else:
+        auto_model = load_model("autoencoder.h5" )
+        scaler = joblib.load("scaler.save")
+        places = pd.read_csv("combined_places.csv")
+
     places['types_processed'] = places['types'].apply(process_types)
     return auto_model, scaler, places
 
@@ -299,12 +307,12 @@ if st.button("Generate Recommendations"):
     final_predictions = predicted[0]
     final_predictions[provided_mask[0]] = input_ratings[0][provided_mask[0]]
     predicted_ratings_dict = {cat: final_predictions[i] for i, cat in enumerate(categories)}
-    
+
     # Hideable expander for Predicted Category Ratings
     with st.expander("Show Predicted Category Ratings"):
         for cat, rating in predicted_ratings_dict.items():
             st.write(f"**{cat}:** {rating:.2f}")
-    
+
     if method == "Autoencoder-Based":
         # --- Autoencoder-Based Recommendations ---
         candidates = []
@@ -329,11 +337,11 @@ if st.button("Generate Recommendations"):
                 'pred_factor': best_factor,
                 'category': best_cat
             })
-        
+
         if not candidates:
             st.error("No candidate places found within 2 km.")
         else:
-            max_reviews = max([row['user_ratings_total'] for candidate in candidates 
+            max_reviews = max([row['user_ratings_total'] for candidate in candidates
                                for row in [candidate['row']] if pd.notna(row['user_ratings_total'])] or [1])
             w_distance = 0.1
             w_rating = 0.2
@@ -369,7 +377,7 @@ if st.button("Generate Recommendations"):
                     break
                 round_idx += 1
             final_candidates = sorted(final_candidates, key=lambda x: x['score'], reverse=True)
-            
+
             st.subheader("Top Place Recommendations (Autoencoder-Based)")
             if final_candidates:
                 best = final_candidates[0]
@@ -408,10 +416,10 @@ if st.button("Generate Recommendations"):
                                 st.write(f"Score: {candidate['score']:.2f}")
             else:
                 st.error("No balanced recommendations found.")
-            
+
             st.subheader("Map View: Recommended Places & Optimized Route")
             show_map(final_candidates, ors_key)
-    
+
     else:
         # --- SVD-Based Recommendations ---
         st.subheader("SVD-Based Recommendations")
@@ -419,7 +427,7 @@ if st.button("Generate Recommendations"):
         svd_rec.evaluate_model(places)
         svd_rec.fit(places)
         recommendations = svd_rec.get_recommendations(places, user_lat, user_lng, predicted_ratings_dict, top_n=num_recs, max_distance=5)
-        
+
         st.subheader("Top Place Recommendations (SVD-Based)")
         if recommendations:
             best = recommendations[0]
@@ -453,7 +461,7 @@ if st.button("Generate Recommendations"):
                         st.write(f"Score: {rec['score']:.2f}")
         else:
             st.error("No recommendations found with SVD-based method.")
-        
+
         st.subheader("Map View: Recommended Places & Optimized Route")
         map_df = pd.DataFrame({
             'name': [rec['name'] for rec in recommendations],
