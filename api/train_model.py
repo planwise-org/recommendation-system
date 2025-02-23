@@ -14,7 +14,7 @@ import joblib
 # 🔹 Load & Validate Data
 # ---------------------------
 try:
-    data = pd.read_csv("new_dataset.csv")  # Ensure this file is the cleaned dataset
+    data = pd.read_csv("/Users/alexandrakhreiche/Desktop/code/planwise_chatbots/recommendation-system/api/new_dataset.csv")  # Ensure this file is the cleaned dataset
     print("✅ Dataset loaded successfully!")
 except FileNotFoundError:
     print("❌ Error: File not found. Ensure 'new_dataset.csv' exists in the correct path.")
