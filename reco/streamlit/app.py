@@ -126,9 +126,8 @@ BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
 def load_resources():
     if os.environ.get('ENV') == 'prod':
         auto_model = load_model(os.path.join(BASE_PATH, "models/autoencoder.h5"))
-        # auto_model = load_model(os.path.join(base_path, "autoencoder.h5"))
-        scaler = joblib.load(os.path.join(base_path, "scaler.save"))
-        places = pd.read_csv("resources/combined_places.csv")
+        scaler = joblib.load(os.path.join(BASE_PATH, "scaler.save"))
+        places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
     else:
         auto_model = load_model("models/autoencoder.h5")
         scaler = joblib.load("models/scaler.save")
