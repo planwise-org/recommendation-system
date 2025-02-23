@@ -8,7 +8,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 import joblib
-
+import os
 # ---------------------------
 # 1) Load and preprocess data
 # ---------------------------
@@ -142,6 +142,10 @@ plt.show()
 # 6) Save the underlying base_model + scaler
 # ---------------------------
 BASE_PATH = "reco/streamlit/"
-base_model.save(BASE_PATH + "autoencoder.h5")
-joblib.dump(scaler, BASE_PATH + "scaler.save")
+if os.environ.get('ENV') == 'prod':
+    base_model.save(BASE_PATH + "autoencoder.h5")
+    joblib.dump(scaler, BASE_PATH + "scaler.save")
+else:
+    base_model.save("autoencoder.h5")
+    joblib.dump(scaler,"scaler.save")
 print("Deeper Weighted Denoising Autoencoder and scaler saved!")

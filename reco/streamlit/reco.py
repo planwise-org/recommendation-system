@@ -5,6 +5,7 @@ from surprise.model_selection import cross_validate
 from surprise import accuracy
 from collections import defaultdict
 from math import radians, sin, cos, sqrt, atan2
+import os
 
 class SVDPlaceRecommender:
     def __init__(self, svd_params=None):
@@ -193,7 +194,6 @@ class SVDPlaceRecommender:
         return recommendations
 
 def main():
-    BASE_PATH = "reco/streamlit/"
     # Example predicted ratings from nn
     predicted_ratings = {
         "resorts": 1.5,
@@ -226,7 +226,12 @@ def main():
         "zoo": 4.5,
         "supermarket": 0.0
     }
-    df = pd.read_csv(BASE_PATH + 'combined_places.csv')
+    BASE_PATH = "reco/streamlit/"
+    if os.environ.get("ENV") == "prod":
+        df = pd.read_csv(BASE_PATH + 'combined_places.csv')
+    else:
+        df = pd.read_csv('combined_places.csv')
+
     recommender = SVDPlaceRecommender()
 
     evaluation_metrics = recommender.evaluate_model(df)
