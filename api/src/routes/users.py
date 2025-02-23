@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
-from ..models import User
+from models import User
 from services.auth import hash_password
 from schemas import UserCreate
 from database import get_db
