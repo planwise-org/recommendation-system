@@ -1,6 +1,6 @@
 # Planwise API
 
-## Instructions for running the API using Docker (recommended)
+## Instructions for running the API locally using Docker (highly recommended)
 
 1. Make sure you have docker installed on your machine
 
