@@ -1,16 +1,12 @@
 from fastapi import FastAPI
 from src.routes.users import users
-from database import init_db, get_session
-
-
-
+from database import init_db
 
 
 app = FastAPI()
 
 
-
-# initialize the db on startup
+# create the db on startup
 @app.on_event("startup")
 def on_startup():
     init_db()
@@ -22,4 +18,3 @@ async def read_root():
 
 # simple setup for including the router page
 app.include_router(users, prefix="/users", tags=["Users"])
-
