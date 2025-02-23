@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from src.routes.users import users
+from routes.users import users
 from database import init_db
 
 
@@ -17,4 +17,4 @@ async def read_root():
     return {"message": "Planwise says Hello World!"}
 
 # simple setup for including the router page
-app.include_router(users, prefix="/users", tags=["Users"])
+app.include_router(users, prefix="/api/users", tags=["Users"])
