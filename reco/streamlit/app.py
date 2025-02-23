@@ -8,6 +8,7 @@ import networkx as nx
 import openrouteservice
 from openrouteservice import convert
 from tensorflow.keras.models import load_model
+from src.transfer_recommender import TransferRecommender  # imported from your src folder
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
 import os
@@ -113,25 +114,22 @@ def show_map(recs, ors_key):
         )
         st.pydeck_chart(deck)
 
-
-
 # ---------------------------
 # Load Resources
 # ---------------------------
-# Update load_resources to include type processing
 @st.cache(allow_output_mutation=True)
 def load_resources():
     base_path = "models"
     auto_model = load_model(os.path.join(base_path, "autoencoder.h5"))
     scaler = joblib.load(os.path.join(base_path, "scaler.save"))
     places = pd.read_csv("resources/combined_places.csv")
-    places['types_processed'] = places['types'].apply(process_types)  # Add this line
+    places['types_processed'] = places['types'].apply(process_types)  # process place types
     return auto_model, scaler, places
 
 auto_model, scaler, places = load_resources()
 
 # ---------------------------
-# Categories
+# Categories and Mappings
 # ---------------------------
 categories = [
     "resorts", "burger/pizza shops", "hotels/other lodgings", "juice bars", "beauty & spas",
@@ -311,23 +309,49 @@ class SVDRecommender(BaseRecommender):
         return sorted(recommendations, key=lambda x: x['score'], reverse=True)[:num_recs]
 
 # ---------------------------
+# Transfer-Based Recommendation Wrapper
+# ---------------------------
+class TransferBasedRecommender(BaseRecommender):
+    def __init__(self):
+        # Instantiate the imported TransferRecommender
+        self.tr = TransferRecommender()
+        # Train/load the base model and transfer to places
+        self.tr.train_base_model(save_path="models")
+        # Use the combined places file (ensure it has been preprocessed as needed)
+        self.places = pd.read_csv("resources/combined_places.csv")
+        self.places['types_processed'] = self.places['types'].apply(process_types)
+        self.tr.transfer_to_places(self.places, save_path="models")
+    
+    def get_recommendations(self, user_lat, user_lon, user_prefs, num_recs):
+        # Call the underlying TransferRecommender get_recommendations method.
+        # Note: the imported method expects a dictionary of user preferences.
+        return self.tr.get_recommendations(
+            user_preferences=user_prefs,
+            user_lat=user_lat,
+            user_lon=user_lon,
+            places_df=self.places,
+            top_n=num_recs
+        )
+
+# ---------------------------
 # UI Setup
 # ---------------------------
 st.sidebar.header("User Settings")
 user_lat = st.sidebar.number_input("Latitude", value=40.4168)
 user_lng = st.sidebar.number_input("Longitude", value=-3.7038)
 num_recs = st.sidebar.slider("Number of Recommendations", 1, 20, 5)
-method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based"])
+method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based"])
 
 st.title("Place Recommendations")
 st.write("Rate your preferences. Check a category to enable its rating.")
 
+# For Autoencoder/SVD, we use checkboxes to mark which ratings are provided
 input_ratings = []
 provided_mask = []
 for cat in categories:
     provide = st.checkbox(f"Rate **{cat}**", key=f"chk_{cat}")
     if provide:
-        rating = st.slider(f"Rating for {cat}:", min_value=0.0, max_value=5.0, step=0.5, key=f"slider_{cat}")
+        rating = st.slider(f"Rating for {cat}:", 0.0, 5.0, 0.0, step=0.5, key=f"slider_{cat}")
         input_ratings.append(rating)
         provided_mask.append(True)
     else:
@@ -336,23 +360,34 @@ for cat in categories:
 input_ratings = np.array(input_ratings, dtype=np.float32).reshape(1, -1)
 provided_mask = np.array(provided_mask, dtype=bool).reshape(1, -1)
 
+# Also prepare a dictionary for Transfer-Based preferences
+user_preferences_dict = {cat: float(st.session_state.get(f"slider_{cat}", 0.0)) for cat in categories}
+
 if st.button("Generate Recommendations"):
-    # Predict missing ratings using the autoencoder
-    input_scaled = scaler.transform(input_ratings)
-    predicted_scaled = auto_model.predict(input_scaled)
-    predicted_scaled = np.clip(predicted_scaled, 0, 1)
-    predicted = scaler.inverse_transform(predicted_scaled)
-    final_predictions = predicted[0]
-    # Overwrite predicted values with provided ratings
-    final_predictions[provided_mask[0]] = input_ratings[0][provided_mask[0]]
-    # Build predicted ratings dict for later use (if needed)
-    predicted_ratings_dict = {cat: final_predictions[i] for i, cat in enumerate(categories)}
+    if method == "Autoencoder-Based":
+        # Predict missing ratings using the autoencoder
+        input_scaled = scaler.transform(input_ratings)
+        predicted_scaled = auto_model.predict(input_scaled)
+        predicted_scaled = np.clip(predicted_scaled, 0, 1)
+        predicted = scaler.inverse_transform(predicted_scaled)
+        final_predictions = predicted[0]
+        # Overwrite predicted values with provided ratings
+        final_predictions[provided_mask[0]] = input_ratings[0][provided_mask[0]]
+        # Now, call the autoencoder recommender with the provided_mask
+        recommender = AutoencoderRecommender()
+        recommendations = recommender.get_recommendations(user_lat, user_lng, final_predictions, provided_mask[0], num_recs)
     
-    # Now, call the autoencoder recommender with the provided_mask
-    recommender = AutoencoderRecommender()
-    recommendations = recommender.get_recommendations(user_lat, user_lng, final_predictions, provided_mask[0], num_recs)
+    elif method == "SVD-Based":
+        # Call the SVD recommender
+        recommender = SVDRecommender()
+        recommendations = recommender.get_recommendations(user_lat, user_lng, input_ratings[0], num_recs)
+        
+    elif method == "Transfer-Based":
+        # Call the Transfer-based recommender using the dictionary of user preferences
+        recommender = TransferBasedRecommender()
+        recommendations = recommender.get_recommendations(user_lat, user_lng, user_preferences_dict, num_recs)
     
-    # Display recommendations and map (ensure recommendations have a 'row' key if your show_map expects it)
+    # Display recommendations and map (each rec is expected to have a 'name', etc.)
     for rec in recommendations:
         st.write(f"**{rec['name']}** (Score: {rec['score']:.2f})")
-    show_map(recommendations, ors_key="")  # or pass your ORS API key if available
+    show_map(recommendations, ors_key=st.sidebar.text_input("ORS API Key", value=""))
