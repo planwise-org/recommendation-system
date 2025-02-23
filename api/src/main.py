@@ -1,7 +1,7 @@
 from fastapi import FastAPI
-from routes.users import users
-from database import init_db
-
+from src.routes.users import users
+from src.database import init_db
+import os
 
 app = FastAPI()
 

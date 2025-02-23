@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
-from models import User
-from services.auth import hash_password
-from schemas import UserCreate
-from database import get_db
+from src.models import User
+from src.services.auth import hash_password
+from src.schemas import UserCreate
+from src.database import get_db
 
 
 users = APIRouter()
-
 
 @users.get("/")
 async def read_users():
