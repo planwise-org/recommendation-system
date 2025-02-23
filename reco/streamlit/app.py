@@ -76,14 +76,17 @@ category_to_place_types = {
     "supermarket": ["supermarket", "grocery_or_supermarket"]
 }
 
+
+BASE_PATH = "reco/streamlit/"
+
 # ---------------------------
 # Load Resources (Model, Scaler, Places Data)
 # ---------------------------
 @st.cache(allow_output_mutation=True)
 def load_resources():
-    model = load_model("autoencoder.h5")
-    scaler = joblib.load("scaler.save")
-    places = pd.read_csv("combined_places.csv")
+    model = load_model(BASE_PATH + "autoencoder.h5")
+    scaler = joblib.load(BASE_PATH + "scaler.save")
+    places = pd.read_csv(BASE_PATH + "combined_places.csv")
     places['types_processed'] = places['types'].apply(process_types)
     return model, scaler, places
 

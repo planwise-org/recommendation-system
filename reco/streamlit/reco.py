@@ -193,6 +193,7 @@ class SVDPlaceRecommender:
         return recommendations
 
 def main():
+    BASE_PATH = "reco/streamlit/"
     # Example predicted ratings from nn
     predicted_ratings = {
         "resorts": 1.5,
@@ -225,7 +226,7 @@ def main():
         "zoo": 4.5,
         "supermarket": 0.0
     }
-    df = pd.read_csv('combined_places.csv')
+    df = pd.read_csv(BASE_PATH + 'combined_places.csv')
     recommender = SVDPlaceRecommender()
 
     evaluation_metrics = recommender.evaluate_model(df)
