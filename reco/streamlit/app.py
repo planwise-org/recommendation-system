@@ -425,10 +425,20 @@ from src.transfer_recommender import TransferRecommender
 class TransferBasedRecommender:
     def __init__(self):
         self.tr = TransferRecommender()
-        self.tr.train_base_model(save_path="models")
-        self.places = pd.read_csv("resources/combined_places.csv")
+
+
+        if os.environ.get('ENV') == 'prod':
+            self.tr.train_base_model(save_path= BASE_PATH + "models")
+            self.places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
+            self.tr.transfer_to_places(self.places, save_path= BASE_PATH+"models")
+
+        else:
+            self.tr.train_base_model(save_path="models")
+            self.places = pd.read_csv("resources/combined_places.csv")
+            self.tr.transfer_to_places(self.places, save_path="models")
+
         self.places['types_processed'] = self.places['types'].apply(process_types)
-        self.tr.transfer_to_places(self.places, save_path="models")
+
 
     def get_recommendations(self, user_lat, user_lon, user_prefs, num_recs):
         return self.tr.get_recommendations(
