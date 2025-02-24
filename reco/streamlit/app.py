@@ -128,7 +128,7 @@ def display_recommendation(rec):
                 st.write(f"**Types:** {rec.get('types', 'N/A')}")
                 st.write(f"**Description:** {rec.get('description', 'No description available.')}")
                 st.write(f"**Coordinates:** (Lat: {rec.get('lat', 'N/A')}, Lon: {rec.get('lng', 'N/A')})")
-                
+
 # ---------------------------
 # Load Resources
 # ---------------------------
@@ -193,6 +193,11 @@ category_to_place_types = {
     "zoo": ["zoo"],
     "supermarket": ["supermarket", "grocery_or_supermarket"]
 }
+
+
+class BaseRecommender:
+    def get_recommendations(self, user_lat, user_lon, user_prefs, num_recs):
+        raise NotImplementedError("Subclasses must implement this method.")
 
 # ---------------------------
 # Autoencoder-Based Recommendation
@@ -363,8 +368,8 @@ class SVDPlaceRecommender:
             })
 
         return sorted(predictions, key=lambda x: x['score'], reverse=True)[:top_n]
-      
-     
+
+
 # class SVDRecommender(BaseRecommender):
 #     def __init__(self):
 #         self.model = SVD(n_factors=150, n_epochs=10, lr_all=0.002, reg_all=0.02)
@@ -634,4 +639,3 @@ if st.button("Generate Recommendations"):
 #     for rec in recommendations:
 #         st.write(f"**{rec['name']}** (Score: {rec['score']:.2f})")
 #     show_map(recommendations, ors_key="")  # or pass your ORS API key if available
-
