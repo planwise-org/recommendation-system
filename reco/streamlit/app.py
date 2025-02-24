@@ -122,7 +122,6 @@ def display_recommendation(rec):
             st.markdown(f"**Average Rating:** {rec.get('actual_rating', rec.get('rating', 'N/A'))}")
             st.markdown(f"**User Ratings Total:** {rec.get('user_ratings_total', 'N/A')}")
             st.markdown(f"**Distance:** {rec.get('distance', 0):.2f} m")
-            st.markdown(f"**Vicinity:** {rec.get('vicinity', 'N/A')}")
             st.markdown(f"**Score:** {rec.get('score', 0):.2f}")
             with st.expander("Show More Details"):
                 st.write(f"**Types:** {rec.get('types', 'N/A')}")
@@ -299,6 +298,7 @@ class TransferBasedRecommender:
             user_lon=user_lon,
             places_df=self.places,
             top_n=num_recs
+            
         )
 
 # ---------------------------
@@ -310,7 +310,7 @@ user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
 #num_recs = st.sidebar.slider("Number of Recommendations", 1, 20, 5)
 ors_key = st.sidebar.text_input("OpenRouteService API Key (optional)", value="", type="password")
 method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based"])
-
+num_recs = 5
 st.title("Personalized Place Recommendations in Madrid")
 st.write("Rate your preferences. Check a category and use the slider (0–5) for those you care about.")
 
