@@ -8,7 +8,7 @@ import pydeck as pdk
 import networkx as nx
 import openrouteservice
 from openrouteservice import convert
-
+import os
 # For SVD-based recommendations:
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
@@ -79,7 +79,7 @@ def show_map(recs, ors_key):
             route_coords = optimized_data[['lon', 'lat']].values.tolist()
         else:
             optimized_data = map_df.copy()
-        
+
         text_layer = pdk.Layer(
             "TextLayer",
             data=optimized_data,
@@ -111,7 +111,7 @@ def show_map(recs, ors_key):
         )
         st.pydeck_chart(deck)
 def display_recommendation(rec):
-    
+
     #st.write("DEBUG: Recommendation Data:", rec)
     with st.container():
         cols = st.columns([1, 3])
@@ -131,10 +131,10 @@ def display_recommendation(rec):
 # Constants and Mappings
 # ---------------------------
 categories = [
-    "resorts", "burger/pizza shops", "hotels/other lodgings", "juice bars", "beauty & spas", 
-    "gardens", "amusement parks", "farmer market", "market", "music halls", "nature", 
-    "tourist attractions", "beaches", "parks", "theatres", "museums", "malls", "restaurants", 
-    "pubs/bars", "local services", "art galleries", "dance clubs", "swimming pools", "bakeries", 
+    "resorts", "burger/pizza shops", "hotels/other lodgings", "juice bars", "beauty & spas",
+    "gardens", "amusement parks", "farmer market", "market", "music halls", "nature",
+    "tourist attractions", "beaches", "parks", "theatres", "museums", "malls", "restaurants",
+    "pubs/bars", "local services", "art galleries", "dance clubs", "swimming pools", "bakeries",
     "cafes", "view points", "monuments", "zoo", "supermarket"
 ]
 
@@ -173,11 +173,18 @@ category_to_place_types = {
 # ---------------------------
 # Load Resources (Autoencoder Model, Scaler, Places Data)
 # ---------------------------
+
+BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
 @st.cache(allow_output_mutation=True)
 def load_resources():
-    auto_model = load_model("models/autoencoder.h5")
-    scaler = joblib.load("models/scaler.save")
-    places = pd.read_csv("resources/combined_places.csv")
+    if os.environ.get('ENV') == 'prod':
+        auto_model = load_model(os.path.join(BASE_PATH, "models/autoencoder.h5"))
+        scaler = joblib.load(os.path.join(BASE_PATH, "models/scaler.save"))
+        places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
+    else:
+        auto_model = load_model("models/autoencoder.h5")
+        scaler = joblib.load("models/scaler.save")
+        places = pd.read_csv("resources/combined_places.csv")
     places['types_processed'] = places['types'].apply(process_types)
     return auto_model, scaler, places
 
@@ -283,6 +290,7 @@ class SVDPlaceRecommender:
 # ---------------------------
 # (Assumes TransferRecommender is imported from your src folder)
 from src.transfer_recommender import TransferRecommender
+
 class TransferBasedRecommender:
     def __init__(self):
         self.tr = TransferRecommender()
@@ -290,7 +298,7 @@ class TransferBasedRecommender:
         self.places = pd.read_csv("resources/combined_places.csv")
         self.places['types_processed'] = self.places['types'].apply(process_types)
         self.tr.transfer_to_places(self.places, save_path="models")
-    
+
     def get_recommendations(self, user_lat, user_lon, user_prefs, num_recs):
         return self.tr.get_recommendations(
             user_preferences=user_prefs,
@@ -298,7 +306,7 @@ class TransferBasedRecommender:
             user_lon=user_lon,
             places_df=self.places,
             top_n=num_recs
-            
+
         )
 
 # ---------------------------
@@ -344,11 +352,11 @@ if st.button("Generate Recommendations"):
     final_predictions = predicted[0]
     final_predictions[provided_mask[0]] = input_ratings[0][provided_mask[0]]
     predicted_ratings_dict = {cat: final_predictions[i] for i, cat in enumerate(categories)}
-    
+
     with st.expander("Show Predicted Category Ratings"):
         for cat, rating in predicted_ratings_dict.items():
             st.write(f"**{cat}:** {rating:.2f}")
-    
+
     # Depending on the method, call the corresponding recommender
     if method == "Autoencoder-Based":
         # --- Autoencoder-Based Recommendations ---
@@ -381,7 +389,7 @@ if st.button("Generate Recommendations"):
         else:
             # Compute normalization values
             max_reviews = max(
-                [cand['row'].get('user_ratings_total', 1) for cand in candidates 
+                [cand['row'].get('user_ratings_total', 1) for cand in candidates
                  if pd.notna(cand['row'].get('user_ratings_total'))] or [1]
             )
             w_distance = 0.1
@@ -418,7 +426,7 @@ if st.button("Generate Recommendations"):
                     break
                 round_idx += 1
             final_candidates = sorted(final_candidates, key=lambda x: x['score'], reverse=True)
-            
+
             # Flatten candidate dictionaries so they match the SVD logic:
             flat_final_candidates = []
             for candidate in final_candidates:
@@ -438,7 +446,7 @@ if st.button("Generate Recommendations"):
                     'category': candidate.get('category', 'N/A')
                 }
                 flat_final_candidates.append(flat_candidate)
-            
+
             st.subheader("Top Place Recommendations (Autoencoder-Based)")
             if flat_final_candidates:
                 st.markdown("### Best Recommendation")
@@ -448,19 +456,19 @@ if st.button("Generate Recommendations"):
                     display_recommendation(rec)
             else:
                 st.error("No balanced recommendations found.")
-            
+
             st.subheader("Map View: Recommended Places & Optimized Route")
             # Wrap flat dictionaries in a 'row' key for mapping (as expected by show_map)
             recs_for_map = [{'row': rec} for rec in flat_final_candidates]
             show_map(recs_for_map, ors_key)
-    
+
     elif method == "SVD-Based":
         st.subheader("SVD-Based Recommendations")
         svd_rec = SVDPlaceRecommender()
         svd_rec.evaluate_model(places)
         svd_rec.fit(places)
         recommendations = svd_rec.get_recommendations(places, user_lat, user_lng, predicted_ratings_dict, top_n=10, max_distance=5)
-        
+
         st.subheader("Top Place Recommendations (SVD-Based)")
         if recommendations:
             # Display the best recommendation prominently
@@ -472,12 +480,12 @@ if st.button("Generate Recommendations"):
                 display_recommendation(rec)
         else:
             st.error("No recommendations found with SVD-based method.")
-        
+
         st.subheader("Map View: Recommended Places & Optimized Route")
         # For SVD recommendations, adjust the data structure for mapping if needed
         recs_for_map = [{'row': rec} for rec in recommendations]
         show_map(recs_for_map, ors_key)
-    
+
     elif method == "Transfer-Based":
         st.subheader("Transfer-Based Recommendations")
         recommender = TransferBasedRecommender()
@@ -487,6 +495,6 @@ if st.button("Generate Recommendations"):
                 display_recommendation(rec)
         else:
             st.error("No recommendations found with Transfer-Based method.")
-        
+
         st.subheader("Map View: Recommended Places & Optimized Route")
         show_map(recommendations, ors_key)
