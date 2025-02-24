@@ -232,6 +232,9 @@ class TransferRecommender:
                     recommendations.append({
                         'place_id': place_id,
                         'name': row['name'],
+                        'icon': row['icon'],
+                        'user_ratings_total': row['user_ratings_total'],
+                        'description': row['description'],
                         'score': final_score,
                         'distance': distance,
                         'similarity': similarity,

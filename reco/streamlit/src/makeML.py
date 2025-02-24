@@ -146,8 +146,8 @@ plt.show()
 # ---------------------------
 
 BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
-
 os.makedirs(BASE_PATH, exist_ok=True)  # Ensure the directory exists
+
 
 if os.environ.get('ENV') == 'prod':
     base_model.save(os.path.join(BASE_PATH, "models/autoencoder.h5"))
