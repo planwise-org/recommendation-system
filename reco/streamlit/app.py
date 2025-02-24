@@ -56,6 +56,7 @@ def show_map(recs, ors_key):
         'lat': lats,
         'lon': lons
     })
+
     route_coords = None
     if not map_df.empty:
         if ors_key and ors_key != "":
@@ -127,8 +128,31 @@ def display_recommendation(rec):
                 st.write(f"**Types:** {rec.get('types', 'N/A')}")
                 st.write(f"**Description:** {rec.get('description', 'No description available.')}")
                 st.write(f"**Coordinates:** (Lat: {rec.get('lat', 'N/A')}, Lon: {rec.get('lng', 'N/A')})")
+                
 # ---------------------------
-# Constants and Mappings
+# Load Resources
+# ---------------------------
+# Update load_resources to include type processing
+
+BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
+
+@st.cache(allow_output_mutation=True)
+def load_resources():
+    if os.environ.get('ENV') == 'prod':
+        auto_model = load_model(os.path.join(BASE_PATH, "models/autoencoder.h5"))
+        scaler = joblib.load(os.path.join(BASE_PATH, "models/scaler.save"))
+        places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
+    else:
+        auto_model = load_model("models/autoencoder.h5")
+        scaler = joblib.load("models/scaler.save")
+        places = pd.read_csv("resources/combined_places.csv")
+    places['types_processed'] = places['types'].apply(process_types)  # Add this line
+    return auto_model, scaler, places
+
+auto_model, scaler, places = load_resources()
+
+# ---------------------------
+# Categories
 # ---------------------------
 categories = [
     "resorts", "burger/pizza shops", "hotels/other lodgings", "juice bars", "beauty & spas",
@@ -171,24 +195,78 @@ category_to_place_types = {
 }
 
 # ---------------------------
-# Load Resources (Autoencoder Model, Scaler, Places Data)
+# Autoencoder-Based Recommendation
 # ---------------------------
+class AutoencoderRecommender(BaseRecommender):
+    def get_recommendations(self, user_lat, user_lon, user_prefs, provided_mask, num_recs):
+        # Reconstruct predicted ratings
+        input_scaled = scaler.transform([user_prefs])
+        predicted_scaled = auto_model.predict(input_scaled)
+        predicted = scaler.inverse_transform(np.clip(predicted_scaled, 0, 1))[0]
+        final_predictions = np.where(provided_mask, user_prefs, predicted)
 
-BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
-@st.cache(allow_output_mutation=True)
-def load_resources():
-    if os.environ.get('ENV') == 'prod':
-        auto_model = load_model(os.path.join(BASE_PATH, "models/autoencoder.h5"))
-        scaler = joblib.load(os.path.join(BASE_PATH, "models/scaler.save"))
-        places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
-    else:
-        auto_model = load_model("models/autoencoder.h5")
-        scaler = joblib.load("models/scaler.save")
-        places = pd.read_csv("resources/combined_places.csv")
-    places['types_processed'] = places['types'].apply(process_types)
-    return auto_model, scaler, places
+        # Candidate scoring logic
+        candidates = []
+        for _, row in places.iterrows():
+            dist = haversine(user_lat, user_lon, row['lat'], row['lng'])
+            if dist > 2000:
+                continue
 
-auto_model, scaler, places = load_resources()
+            best_cat = None
+            best_score = 0
+            for i, cat in enumerate(categories):
+                mapped_types = category_to_place_types.get(cat, [])
+                if any(pt in row['types_processed'] for pt in mapped_types):
+                    cat_score = final_predictions[i] / 5.0
+                    if cat_score > best_score:
+                        best_score = cat_score
+                        best_cat = cat
+
+            if best_cat:
+                norm_rating = (row['rating'] / 5.0) if pd.notna(row['rating']) else 0
+                norm_reviews = (np.log(row['user_ratings_total'] + 1)) / np.log(places['user_ratings_total'].max() + 1) if pd.notna(row['user_ratings_total']) else 0
+                score = (0.1 * (1 - dist/2000) +
+                        0.2 * norm_rating +
+                        0.2 * norm_reviews +
+                        0.5 * best_score)
+
+                candidates.append({
+                    'row': row,
+                    'score': score,
+                    'category': best_cat,
+                    'distance': dist
+                })
+
+        # Category balancing logic
+        candidates.sort(key=lambda x: x['score'], reverse=True)
+        category_groups = {}
+        for candidate in candidates:
+            category_groups.setdefault(candidate['category'], []).append(candidate)
+
+        final_recs = []
+        round_idx = 0
+        while len(final_recs) < num_recs:
+            added = False
+            for cat in category_groups.values():
+                if len(cat) > round_idx:
+                    final_recs.append(cat[round_idx])
+                    added = True
+                    if len(final_recs) >= num_recs:
+                        break
+            if not added:
+                break
+            round_idx += 1
+
+        return [{
+            'name': r['row']['name'],
+            'lat': r['row']['lat'],
+            'lng': r['row']['lng'],
+            'score': r['score'],
+            'category': r['category'],
+            'rating': r['row']['rating'],
+            'reviews': r['row']['user_ratings_total']
+        } for r in final_recs[:num_recs]]
+
 
 # ---------------------------
 # SVDPlaceRecommender: SVD-Based Collaborative Filtering
@@ -283,7 +361,55 @@ class SVDPlaceRecommender:
                 'lat': row['lat'],
                 'lng': row['lng']
             })
+
         return sorted(predictions, key=lambda x: x['score'], reverse=True)[:top_n]
+      
+     
+# class SVDRecommender(BaseRecommender):
+#     def __init__(self):
+#         self.model = SVD(n_factors=150, n_epochs=10, lr_all=0.002, reg_all=0.02)
+#         self.reader = Reader(rating_scale=(1, 5))
+
+#     def prepare_data(self):
+#         ratings = []
+#         for _, row in places.iterrows():
+#             if pd.notna(row['rating']):
+#                 ratings.append({
+#                     'user': 'default_user',
+#                     'item': row['name'],
+#                     'rating': row['rating']
+#                 })
+#         return Dataset.load_from_df(pd.DataFrame(ratings), self.reader)
+
+#     def get_recommendations(self, user_lat, user_lon, user_prefs, num_recs):
+#         data = self.prepare_data()
+#         trainset = data.build_full_trainset()
+#         self.model.fit(trainset)
+
+#         recommendations = []
+#         for _, row in places.iterrows():
+#             dist = haversine(user_lat, user_lon, row['lat'], row['lng'])
+#             if dist > 5000:
+#                 continue
+
+#             try:
+#                 pred = self.model.predict('default_user', row['name']).est
+#             except:
+#                 pred = 3.0
+
+#             type_score = 0
+#             for i, cat in enumerate(categories):
+#                 if any(pt in row['types_processed'] for pt in category_to_place_types.get(cat, [])):
+#                     type_score += user_prefs[i]
+#             type_score /= 5.0  # Normalize
+
+#             score = (0.4 * pred/5.0 +
+#                     0.4 * type_score +
+#                     0.2 * (1 - dist/5000))
+
+#             recommendations.append({
+#         return sorted(recommendations, key=lambda x: x['score'], reverse=True)[:num_recs]
+
 
 # ---------------------------
 # Transfer-Based Recommendation Wrapper
@@ -352,6 +478,7 @@ if st.button("Generate Recommendations"):
     final_predictions = predicted[0]
     final_predictions[provided_mask[0]] = input_ratings[0][provided_mask[0]]
     predicted_ratings_dict = {cat: final_predictions[i] for i, cat in enumerate(categories)}
+
 
     with st.expander("Show Predicted Category Ratings"):
         for cat, rating in predicted_ratings_dict.items():
@@ -498,3 +625,13 @@ if st.button("Generate Recommendations"):
 
         st.subheader("Map View: Recommended Places & Optimized Route")
         show_map(recommendations, ors_key)
+
+#     # Now, call the autoencoder recommender with the provided_mask
+#     recommender = AutoencoderRecommender()
+#     recommendations = recommender.get_recommendations(user_lat, user_lng, final_predictions, provided_mask[0], num_recs)
+
+#     # Display recommendations and map (ensure recommendations have a 'row' key if your show_map expects it)
+#     for rec in recommendations:
+#         st.write(f"**{rec['name']}** (Score: {rec['score']:.2f})")
+#     show_map(recommendations, ors_key="")  # or pass your ORS API key if available
+

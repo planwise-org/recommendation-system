@@ -10,3 +10,5 @@ psycopg2-binary
 passlib
 jose==1.0.0
 python-jose==3.3.0
+supabase
+python-dotenv
