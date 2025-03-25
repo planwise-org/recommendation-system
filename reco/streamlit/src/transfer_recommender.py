@@ -101,6 +101,7 @@ class TransferRecommender:
     def train_base_model(self, save_path="models"):
         """Train on MovieLens data using BiVAE and save the model"""
         try:
+            # Check if pre-computed embeddings exist and load them
             if os.path.exists(f"{save_path}/movie_embeddings.npz"):
                 print("Loading pre-trained movie embeddings...")
                 data = np.load(f"{save_path}/movie_embeddings.npz", allow_pickle=True)
@@ -120,9 +121,23 @@ class TransferRecommender:
             print("Preparing training data...")
             train, test = python_random_split(df, ratio=0.75)
             
+            # Create id mappings to preserve original movieIds
+            print("Creating ID mappings...")
+            user_ids = train['userId'].unique()
+            movie_ids = train['movieId'].unique()
+            
+            user_to_idx = {uid: i for i, uid in enumerate(user_ids)}
+            movie_to_idx = {mid: i for i, mid in enumerate(movie_ids)}
+            idx_to_movie = {i: mid for mid, i in movie_to_idx.items()}
+            
+            # Convert train data to use indices
+            train_cornac = train.copy()
+            train_cornac['userId'] = train_cornac['userId'].map(user_to_idx)
+            train_cornac['movieId'] = train_cornac['movieId'].map(movie_to_idx)
+            
             print("Creating Cornac dataset...")
             train_set = cornac.data.Dataset.from_uir(
-                train.rename(columns={'userId': 'userID', 'movieId': 'itemID'})
+                train_cornac.rename(columns={'userId': 'userID', 'movieId': 'itemID'})
                 .itertuples(index=False), 
                 seed=SEED
             )
@@ -148,16 +163,18 @@ class TransferRecommender:
             
             # Extract and save item embeddings from BiVAE
             print("Extracting movie embeddings...")
-            # BiVAE provides item embeddings through its item_factors attribute
-            self.movie_embeddings = self.model.item_factors
+            # In BiVAE, we need to extract embeddings from the model directly
+            # Get item embeddings using the feature matrices of BiVAE
+            # This is the correct way to access embeddings in BiVAECF
+            self.movie_embeddings = self.model.beta_item if hasattr(self.model, 'beta_item') else None
             
-            # Get a mapping of cornac item indices to original movieIds
-            id_mapping = train_set.uid_map if hasattr(train_set, 'uid_map') else {}
-            inv_id_mapping = {v: k for k, v in id_mapping.items()}
+            if self.movie_embeddings is None:
+                # Fallback approach: generate embeddings by getting latent factors
+                item_ids = np.arange(train_set.num_items)
+                self.movie_embeddings = self.model.get_item_vectors()
             
-            # Extract movieIds in the same order as the embeddings
-            self.movie_ids = np.array([int(inv_id_mapping.get(i, i)) 
-                                     for i in range(self.movie_embeddings.shape[0])])
+            # Get original movie IDs in the same order as the embeddings
+            self.movie_ids = np.array([idx_to_movie[i] for i in range(len(movie_ids))])
             
             # Save embeddings and movie IDs
             os.makedirs(save_path, exist_ok=True)
@@ -181,8 +198,15 @@ class TransferRecommender:
             self.place_embeddings = joblib.load(f"{save_path}/place_embeddings.joblib")
             return
 
+        if self.movie_embeddings is None:
+            print("Movie embeddings not available. Loading or training base model...")
+            self.train_base_model(save_path)
+
         print("Transferring knowledge to places domain...")
         self.place_embeddings = {}
+        
+        # Get embedding dimension from actual embeddings
+        embedding_dim = self.movie_embeddings.shape[1] if hasattr(self.movie_embeddings, 'shape') else self.embedding_dim
         
         for idx, row in places_df.iterrows():
             if idx % 100 == 0:
@@ -213,11 +237,8 @@ class TransferRecommender:
             if relevant_embeddings:
                 self.place_embeddings[str(row['place_id'])] = np.mean(relevant_embeddings, axis=0)
             else:
-                # For places without matching categories, create random embeddings with same shape as BiVAE embeddings
-                self.place_embeddings[str(row['place_id'])] = np.random.normal(
-                    0, 0.1, 
-                    size=self.movie_embeddings.shape[1]
-                )
+                # For places without matching categories, create random embeddings with same shape
+                self.place_embeddings[str(row['place_id'])] = np.random.normal(0, 0.1, size=embedding_dim)
         
         # Save place embeddings
         joblib.dump(self.place_embeddings, f"{save_path}/place_embeddings.joblib")
