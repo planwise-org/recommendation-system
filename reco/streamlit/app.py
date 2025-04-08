@@ -12,6 +12,7 @@ import os
 # For SVD-based recommendations:
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
+from pathway import get_optimal_path
 
 # ---------------------------
 # Helper Functions
@@ -58,7 +59,7 @@ def show_map(recs, ors_key):
     })
 
     route_coords = None
-    if not map_df.empty:
+    if not map_df.empty and len(map_df) >= 2:
         if ors_key and ors_key != "":
             try:
                 client = openrouteservice.Client(key=ors_key)
@@ -111,6 +112,7 @@ def show_map(recs, ors_key):
             tooltip={"text": "{name}"}
         )
         st.pydeck_chart(deck)
+
 def display_recommendation(rec):
 
     #st.write("DEBUG: Recommendation Data:", rec)
@@ -598,48 +600,80 @@ if st.button("Generate Recommendations"):
                     display_recommendation(rec)
             else:
                 st.error("No balanced recommendations found.")
+                
+            rl_path = None
+            # Optional RL Path Optimization
+            use_rl = st.checkbox("Use RL for route optimization?", value=True)
 
-            st.subheader("Map View: Recommended Places & Optimized Route")
-            # Wrap flat dictionaries in a 'row' key for mapping (as expected by show_map)
-            recs_for_map = [{'row': rec} for rec in flat_final_candidates]
-            show_map(recs_for_map, ors_key)
+            if use_rl:
+                st.subheader("RL-Optimized Route Based on Preferences + Distance")
+                flat_final_candidates = [
+                    p for p in flat_final_candidates
+                    if (
+                        p.get("lat") is not None and
+                        p.get("lng") is not None and
+                        not np.isnan(p.get("score", 0)) and
+                        not np.isnan(p.get("actual_rating", 0)) and
+                        not np.isnan(p.get("user_ratings_total", 0))
+                    )
+             ]
+                # Get RL path (trains + predicts)
+                from pathway import get_optimal_path
+                rl_path = get_optimal_path(flat_final_candidates, user_lat, user_lng)
 
-    elif method == "SVD-Based":
-        st.subheader("SVD-Based Recommendations")
-        svd_rec = SVDPlaceRecommender()
-        svd_rec.evaluate_model(places)
-        svd_rec.fit(places)
-        recommendations = svd_rec.get_recommendations(places, user_lat, user_lng, predicted_ratings_dict, top_n=10, max_distance=5)
+                import networkx as nx
 
-        st.subheader("Top Place Recommendations (SVD-Based)")
-        if recommendations:
-            # Display the best recommendation prominently
-            best = recommendations[0]
-            st.markdown("### Best Recommendation")
-            display_recommendation(best)
-            st.markdown("### Other Recommendations")
-            for rec in recommendations[1:]:
-                display_recommendation(rec)
-        else:
-            st.error("No recommendations found with SVD-based method.")
+                def apply_tsp_to_path(places):
+                    G = nx.complete_graph(len(places))
+                    coords = [(p["lat"], p["lng"]) for p in places]
+
+                    for i, j in G.edges():
+                        G[i][j]["weight"] = euclidean_distance(coords[i], coords[j])
+
+                    tsp_order = nx.approximation.traveling_salesman_problem(G, cycle=False)
+                    return [places[i] for i in tsp_order]
+                
+                rl_path = apply_tsp_to_path(rl_path)
+                
+                st.success("RL-Optimized Route was used!")
+                # Display recommendations in path order
+                st.markdown("### Optimized Path")
+                for rec in rl_path:
+                    display_recommendation(rec)
+
+                # Prepare map input
+                recs_for_map = [{'row': rec} for rec in rl_path]
+
+            else:
+                st.markdown("### Recommended Places (Unordered)")
+                st.info("ℹ️ RL not selected — showing default route.")
+                for rec in flat_final_candidates:
+                    display_recommendation(rec)
+
+                recs_for_map = [{'row': rec} for rec in flat_final_candidates]
 
         st.subheader("Map View: Recommended Places & Optimized Route")
-        # For SVD recommendations, adjust the data structure for mapping if needed
-        recs_for_map = [{'row': rec} for rec in recommendations]
         show_map(recs_for_map, ors_key)
 
-    elif method == "Transfer-Based":
-        st.subheader("Transfer-Based Recommendations")
-        recommender = TransferBasedRecommender()
-        recommendations = recommender.get_recommendations(user_lat, user_lng, user_preferences_dict, num_recs)
-        if recommendations:
-            for rec in recommendations:
-                display_recommendation(rec)
-        else:
-            st.error("No recommendations found with Transfer-Based method.")
+        # Route Details Below Map
+        st.subheader(" Route Details")
+          
+        # Use RL path if available, otherwise fallback to flat recommendations
+        path_used = rl_path if use_rl and rl_path is not None else flat_final_candidates
 
-        st.subheader("Map View: Recommended Places & Optimized Route")
-        show_map(recommendations, ors_key)
+        total_distance = 0
+
+        for i in range(len(path_used)):
+            current = path_used[i]
+            st.markdown(f"**{i+1}. {current['name']}** *(Category: {current['category']})*")
+
+            if i > 0:
+                prev = path_used[i - 1]
+                dist = haversine(prev['lat'], prev['lng'], current['lat'], current['lng']) / 1000  # in km
+                total_distance += dist
+                st.write(f"↳ Distance from previous: `{dist:.2f} km`")
+
+        st.markdown(f"** Total Travel Distance:** `{total_distance:.2f} km`")
 
 #     # Now, call the autoencoder recommender with the provided_mask
 #     recommender = AutoencoderRecommender()
