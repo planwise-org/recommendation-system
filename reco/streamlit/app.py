@@ -8,6 +8,9 @@ import pydeck as pdk
 import networkx as nx
 import openrouteservice
 from openrouteservice import convert
+import re
+import textblob
+import spacy
 
 # For SVD-based recommendations:
 from surprise import SVD, Dataset, Reader
@@ -39,7 +42,6 @@ def euclidean_distance(p1, p2):
 
 def show_map(recs, ors_key):
     """Display an interactive PyDeck map with an optimized route and text labels."""
-    # Determine if the recs are nested (with key 'row') or flat.
     if not recs:
         return
     if 'row' in recs[0]:
@@ -67,7 +69,6 @@ def show_map(recs, ors_key):
             except Exception as e:
                 st.error(f"Routing API error: {e}")
                 route_coords = None
-        # Fallback: TSP optimization using Euclidean distances.
         if route_coords is None:
             G = nx.complete_graph(len(map_df))
             coords = map_df[['lat', 'lon']].values
@@ -110,9 +111,8 @@ def show_map(recs, ors_key):
             tooltip={"text": "{name}"}
         )
         st.pydeck_chart(deck)
+
 def display_recommendation(rec):
-    
-    #st.write("DEBUG: Recommendation Data:", rec)
     with st.container():
         cols = st.columns([1, 3])
         with cols[0]:
@@ -127,6 +127,7 @@ def display_recommendation(rec):
                 st.write(f"**Types:** {rec.get('types', 'N/A')}")
                 st.write(f"**Description:** {rec.get('description', 'No description available.')}")
                 st.write(f"**Coordinates:** (Lat: {rec.get('lat', 'N/A')}, Lon: {rec.get('lng', 'N/A')})")
+
 # ---------------------------
 # Constants and Mappings
 # ---------------------------
@@ -281,7 +282,6 @@ class SVDPlaceRecommender:
 # ---------------------------
 # Transfer-Based Recommendation Wrapper
 # ---------------------------
-# (Assumes TransferRecommender is imported from your src folder)
 from src.transfer_recommender import TransferRecommender
 class TransferBasedRecommender:
     def __init__(self):
@@ -298,7 +298,6 @@ class TransferBasedRecommender:
             user_lon=user_lon,
             places_df=self.places,
             top_n=num_recs
-            
         )
 
 # ---------------------------
@@ -307,29 +306,115 @@ class TransferBasedRecommender:
 st.sidebar.header("User Settings")
 user_lat = st.sidebar.number_input("Latitude", value=40.4168, format="%.4f")
 user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
-#num_recs = st.sidebar.slider("Number of Recommendations", 1, 20, 5)
 ors_key = st.sidebar.text_input("OpenRouteService API Key (optional)", value="", type="password")
 method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based"])
 num_recs = 5
 st.title("Personalized Place Recommendations in Madrid")
 st.write("Rate your preferences. Check a category and use the slider (0–5) for those you care about.")
+st.subheader("💬 Chat with the Recommender")
 
-# Capture user preferences with checkboxes and sliders
-input_ratings = []
-provided_mask = []
-for cat in categories:
-    provide = st.checkbox(f"Rate **{cat}**", key=f"chk_{cat}")
-    if provide:
-        rating = st.slider(f"Rating for {cat}:", min_value=0.0, max_value=5.0, step=0.5, key=f"slider_{cat}")
-        input_ratings.append(rating)
-        provided_mask.append(True)
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+user_msg = st.chat_input("Tell me what you're looking for (e.g., 'I love nature and museums')")
+
+# ---------------------------
+# Advanced Preference Extraction Using spaCy
+# ---------------------------
+# Expanded keyword mappings including art galleries.
+similar_keywords = {
+    "nature": ["nature", "outdoors", "green", "trees"],
+    "parks": ["park", "picnic", "gardens"],
+    "museums": ["museum", "exhibit", "history"],
+    "cafes": ["cafe", "coffee", "espresso", "latte"],
+    "beaches": ["beach", "sand", "sea", "ocean"],
+    "restaurants": ["restaurant", "dinner", "food", "eat"],
+    "pubs/bars": ["bar", "pub", "beer", "cocktail"],
+    "monuments": ["monument", "statue", "landmark"],
+    "art galleries": ["art", "gallery", "galleries"]
+}
+
+# Load spaCy English model (ensure you've run: python -m spacy download en_core_web_sm)
+nlp = spacy.load("en_core_web_sm")
+
+def get_sentiment_rating(text):
+    """Compute a sentiment-based rating (0–5) using TextBlob."""
+    blob = textblob.TextBlob(text)
+    polarity = blob.sentiment.polarity  # Range: -1 to 1
+    return round((polarity + 1) * 2.5, 1)
+
+def extract_preferences_from_message(message, window_size=3):
+    """
+    Extracts category preferences using spaCy.
+    For each sentence, it looks for keywords defined in similar_keywords.
+    If a strong sentiment modifier (e.g. "love", "amazing") is found within a window of tokens,
+    the category is given a rating of 5. Otherwise, the sentence-level sentiment rating is used.
+    """
+    # Initialize all preferences to 0.
+    prefs = {cat: 0.0 for cat in categories}
+    # Define strong sentiment modifiers.
+    strong_modifiers = {"love", "loved", "adore", "amazing", "fantastic", "great", "incredible", "passionate"}
+    
+    doc = nlp(message)
+    for sent in doc.sents:
+        sent_text = sent.text
+        sent_rating = get_sentiment_rating(sent_text)
+        tokens = list(sent)
+        for i, token in enumerate(tokens):
+            token_text = token.text.lower()
+            for category, keywords in similar_keywords.items():
+                if token_text in keywords:
+                    # Check a window of tokens around the keyword.
+                    window_start = max(0, i - window_size)
+                    window_end = min(len(tokens), i + window_size + 1)
+                    window_tokens = tokens[window_start:window_end]
+                    if any(w.text.lower() in strong_modifiers for w in window_tokens):
+                        prefs[category] = max(prefs[category], 5.0)
+                    else:
+                        prefs[category] = max(prefs[category], sent_rating)
+    return prefs
+
+# ---------------------------
+# Process Chat Input and Set Preference Sliders
+# ---------------------------
+if user_msg:
+    st.session_state.messages.append({"role": "user", "content": user_msg})
+    extracted_prefs = extract_preferences_from_message(user_msg)
+    if not any(val > 0 for val in extracted_prefs.values()):
+        bot_reply = "Hmm, I couldn't find any familiar categories. Try something like 'parks, cafes, museums'."
+        st.session_state.messages.append({"role": "assistant", "content": bot_reply})
     else:
-        input_ratings.append(0.0)
-        provided_mask.append(False)
-input_ratings = np.array(input_ratings, dtype=np.float32).reshape(1, -1)
-provided_mask = np.array(provided_mask, dtype=bool).reshape(1, -1)
+        for cat, rating in extracted_prefs.items():
+            st.session_state[f"slider_{cat}"] = rating
+            st.session_state[f"chk_{cat}"] = True
+        bot_reply = "Great! Based on what you said, I've filled in some preferences. You can adjust them below if needed."
+        st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+        st.rerun()
 
-# Also prepare a dictionary for Transfer-Based preferences if needed
+# Modify slider loop to use session_state values
+def get_user_inputs():
+    input_ratings = []
+    provided_mask = []
+    for cat in categories:
+        default_chk = st.session_state.get(f"chk_{cat}", False)
+        default_val = st.session_state.get(f"slider_{cat}", 0.0)
+        provide = st.checkbox(f"Rate **{cat}**", value=default_chk, key=f"chk_{cat}")
+        if provide:
+            rating = st.slider(f"Rating for {cat}:", min_value=0.0, max_value=5.0, step=0.5, value=default_val, key=f"slider_{cat}")
+            input_ratings.append(rating)
+            provided_mask.append(True)
+        else:
+            input_ratings.append(0.0)
+            provided_mask.append(False)
+    return np.array(input_ratings, dtype=np.float32).reshape(1, -1), np.array(provided_mask, dtype=bool).reshape(1, -1)
+
+input_ratings, provided_mask = get_user_inputs()
+
+# Adjust Transfer preferences too
 user_preferences_dict = {cat: float(st.session_state.get(f"slider_{cat}", 0.0)) for cat in categories}
 
 # ---------------------------
@@ -349,9 +434,7 @@ if st.button("Generate Recommendations"):
         for cat, rating in predicted_ratings_dict.items():
             st.write(f"**{cat}:** {rating:.2f}")
     
-    # Depending on the method, call the corresponding recommender
     if method == "Autoencoder-Based":
-        # --- Autoencoder-Based Recommendations ---
         candidates = []
         for idx, row in places.iterrows():
             dist = haversine(user_lat, user_lng, row['lat'], row['lng'])
@@ -359,7 +442,6 @@ if st.button("Generate Recommendations"):
                 continue
             best_cat = None
             best_factor = 0
-            # Compare using processed types for matching
             for cat, pred_val in predicted_ratings_dict.items():
                 mapped_types = category_to_place_types.get(cat, [])
                 if any(pt in row['types_processed'] for pt in mapped_types):
@@ -369,7 +451,6 @@ if st.button("Generate Recommendations"):
                         best_cat = cat
             if best_cat is None:
                 continue
-            # Convert row to dictionary so keys are accessible via .get()
             candidates.append({
                 'row': row.to_dict(),
                 'distance': dist,
@@ -379,7 +460,6 @@ if st.button("Generate Recommendations"):
         if not candidates:
             st.error("No candidate places found within 2 km.")
         else:
-            # Compute normalization values
             max_reviews = max(
                 [cand['row'].get('user_ratings_total', 1) for cand in candidates 
                  if pd.notna(cand['row'].get('user_ratings_total'))] or [1]
@@ -398,7 +478,6 @@ if st.button("Generate Recommendations"):
                                       w_rating * norm_rating +
                                       w_reviews * norm_reviews +
                                       w_pred * candidate['pred_factor'])
-            # Group candidates by category for balanced selection
             groups = {}
             for candidate in candidates:
                 groups.setdefault(candidate['category'], []).append(candidate)
@@ -419,7 +498,6 @@ if st.button("Generate Recommendations"):
                 round_idx += 1
             final_candidates = sorted(final_candidates, key=lambda x: x['score'], reverse=True)
             
-            # Flatten candidate dictionaries so they match the SVD logic:
             flat_final_candidates = []
             for candidate in final_candidates:
                 row = candidate['row']
@@ -450,7 +528,6 @@ if st.button("Generate Recommendations"):
                 st.error("No balanced recommendations found.")
             
             st.subheader("Map View: Recommended Places & Optimized Route")
-            # Wrap flat dictionaries in a 'row' key for mapping (as expected by show_map)
             recs_for_map = [{'row': rec} for rec in flat_final_candidates]
             show_map(recs_for_map, ors_key)
     
@@ -463,7 +540,6 @@ if st.button("Generate Recommendations"):
         
         st.subheader("Top Place Recommendations (SVD-Based)")
         if recommendations:
-            # Display the best recommendation prominently
             best = recommendations[0]
             st.markdown("### Best Recommendation")
             display_recommendation(best)
@@ -474,7 +550,6 @@ if st.button("Generate Recommendations"):
             st.error("No recommendations found with SVD-based method.")
         
         st.subheader("Map View: Recommended Places & Optimized Route")
-        # For SVD recommendations, adjust the data structure for mapping if needed
         recs_for_map = [{'row': rec} for rec in recommendations]
         show_map(recs_for_map, ors_key)
     
