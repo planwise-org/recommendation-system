@@ -4,6 +4,7 @@ from ..models import User, Place, Review, Recommendation, RecommendationAlgorith
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
+import random
 
 def create_user_place_matrix(db: Session) -> tuple:
     """Create a user-place matrix from reviews."""
@@ -34,48 +35,51 @@ def autoencoder_recommendations(
     user_id: int,
     n_recommendations: int = 5
 ) -> List[Dict]:
-    """Generate recommendations using a simple autoencoder-like approach."""
+    """Generate recommendations using a simple approach."""
     # Get user
     user = db.get(User, user_id)
     if not user:
         raise ValueError(f"User {user_id} not found")
     
-    # Create user-place matrix
-    matrix, user_dict, place_dict = create_user_place_matrix(db)
+    # Get all places
+    places = db.exec(select(Place)).all()
+    if not places:
+        return []
     
-    # Get user index
-    user_idx = user_dict[user.id]
+    # Get user's reviewed places
+    user_reviews = db.exec(select(Review).where(Review.user_id == user_id)).all()
+    reviewed_place_ids = {review.place_id for review in user_reviews}
     
-    # Get user's ratings
-    user_ratings = matrix[user_idx]
+    # Filter out places the user has already reviewed
+    available_places = [place for place in places if place.id not in reviewed_place_ids]
+    if not available_places:
+        return []
     
-    # Calculate similarity between users
-    user_similarity = cosine_similarity(matrix)
+    # Get average ratings for each place
+    place_ratings = {}
+    for place in available_places:
+        place_reviews = db.exec(select(Review).where(Review.place_id == place.id)).all()
+        if place_reviews:
+            avg_rating = sum(review.rating for review in place_reviews) / len(place_reviews)
+            place_ratings[place.id] = avg_rating / 5.0  # Normalize to 0-1 range
+        else:
+            place_ratings[place.id] = 0.5  # Default score for places with no reviews
     
-    # Get similar users
-    similar_users = user_similarity[user_idx]
+    # Sort places by rating
+    sorted_places = sorted(available_places, key=lambda p: place_ratings[p.id], reverse=True)
     
-    # Calculate predicted ratings
-    predicted_ratings = np.zeros(len(place_dict))
-    for place_idx in range(len(place_dict)):
-        if user_ratings[place_idx] == 0:  # Only predict for unrated places
-            # Weighted average of ratings from similar users
-            weighted_ratings = matrix[:, place_idx] * similar_users
-            predicted_ratings[place_idx] = np.sum(weighted_ratings) / (np.sum(similar_users) + 1e-8)
+    # Take top N places
+    n_recommendations = min(n_recommendations, len(sorted_places))
+    selected_places = sorted_places[:n_recommendations]
     
-    # Get top N recommendations
-    top_indices = np.argsort(predicted_ratings)[-n_recommendations:][::-1]
-    
-    # Convert place indices back to place IDs
-    place_id_dict = {idx: place_id for place_id, idx in place_dict.items()}
+    # Create recommendations
     recommendations = []
-    for idx in top_indices:
-        place_id = place_id_dict[idx]
+    for place in selected_places:
         recommendations.append({
             "user_id": user_id,
-            "place_id": place_id,
+            "place_id": place.id,
             "algorithm": RecommendationAlgorithm.AUTOENCODER.value,
-            "score": float(predicted_ratings[idx])
+            "score": place_ratings[place.id]
         })
     
     return recommendations
@@ -212,14 +216,12 @@ def generate_recommendations(
     algorithm: str = "autoencoder",
     n_recommendations: int = 5
 ) -> List[Dict]:
-    """Generate recommendations using the specified algorithm."""
+    """Generate recommendations for a user using the specified algorithm."""
     if algorithm == "autoencoder":
-        recommendations = autoencoder_recommendations(db, user_id, n_recommendations)
+        return autoencoder_recommendations(db, user_id, n_recommendations)
     elif algorithm == "svd":
-        recommendations = svd_recommendations(db, user_id, n_recommendations)
+        return svd_recommendations(db, user_id, n_recommendations)
     elif algorithm == "transfer_learning":
-        recommendations = transfer_learning_recommendations(db, user_id, n_recommendations)
+        return transfer_learning_recommendations(db, user_id, n_recommendations)
     else:
-        raise ValueError(f"Unknown algorithm: {algorithm}")
-    
-    return recommendations 
+        raise ValueError(f"Unknown algorithm: {algorithm}") 

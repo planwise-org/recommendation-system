@@ -39,14 +39,21 @@ def generate_user_recommendations(
     db: Session = Depends(get_session)
 ):
     recommendations = generate_recommendations(db, user_id, algorithm)
-    # Convert the recommendations to RecommendationRead models
     db_recommendations = []
     for rec in recommendations:
-        db_rec = Recommendation(**rec)
+        db_rec = Recommendation(
+            user_id=rec["user_id"],
+            place_id=rec["place_id"],
+            algorithm=rec["algorithm"],
+            score=rec["score"],
+            visited=False,
+            reviewed=False
+        )
         db.add(db_rec)
-        db.commit()
-        db.refresh(db_rec)
         db_recommendations.append(db_rec)
+    db.commit()
+    for rec in db_recommendations:
+        db.refresh(rec)
     return db_recommendations
 
 @router.get("/{recommendation_id}", response_model=RecommendationRead)
