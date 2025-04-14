@@ -458,7 +458,25 @@ user_lat = st.sidebar.number_input("Latitude", value=40.4168, format="%.4f")
 user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
 #num_recs = st.sidebar.slider("Number of Recommendations", 1, 20, 5)
 ors_key = st.sidebar.text_input("OpenRouteService API Key (optional)", value="", type="password")
-method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based"])
+method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Ensemble"])
+# Add ensemble weights if ensemble method is selected
+if method == "Ensemble":
+    st.sidebar.subheader("Ensemble Weights")
+    auto_weight = st.sidebar.slider("Autoencoder Weight", 0.0, 1.0, 0.33, 0.01)
+    svd_weight = st.sidebar.slider("SVD Weight", 0.0, 1.0, 0.33, 0.01)
+    transfer_weight = st.sidebar.slider("Transfer Learning Weight", 0.0, 1.0, 0.34, 0.01)
+    # Normalize weights to ensure they sum to 1
+    total_weight = auto_weight + svd_weight + transfer_weight
+    if total_weight > 0:
+        auto_weight = auto_weight / total_weight
+        svd_weight = svd_weight / total_weight
+        transfer_weight = transfer_weight / total_weight
+    ensemble_weights = {
+        'autoencoder': auto_weight,
+        'svd': svd_weight,
+        'transfer': transfer_weight
+    }
+
 num_recs = 5
 st.title("Personalized Place Recommendations in Madrid")
 st.write("Rate your preferences. Check a category and use the slider (0–5) for those you care about.")
@@ -640,6 +658,88 @@ if st.button("Generate Recommendations"):
 
         st.subheader("Map View: Recommended Places & Optimized Route")
         show_map(recommendations, ors_key)
+    
+    elif method == "Ensemble":
+        # Import the EnsembleRecommender
+        from src.ensemble import EnsembleRecommender
+        
+        # Create progress bar for ensemble initialization
+        progress_bar = st.progress(0)
+        st.write("Initializing Ensemble Recommender...")
+        
+        # Initialize the ensemble recommender with the specified weights
+        ensemble = EnsembleRecommender(weights=ensemble_weights)
+        progress_bar.progress(25)
+        
+        # Initialize all the models
+        st.write("Loading models...")
+        ensemble.initialize_models(
+            auto_model, 
+            scaler, 
+            places, 
+            category_to_place_types, 
+            AutoencoderRecommender, 
+            SVDPlaceRecommender
+        )
+        progress_bar.progress(75)
+        
+        # Get ensemble recommendations
+        st.write("Generating ensemble recommendations...")
+        recommendations = ensemble.get_recommendations(
+            user_lat, user_lng, 
+            user_preferences_dict, 
+            predicted_ratings_dict, 
+            num_recs=num_recs
+        )
+        progress_bar.progress(100)
+        
+        # Display recommendations
+        st.subheader("Ensemble Recommendations")
+        if recommendations:
+            # Display the best recommendation prominently
+            best = recommendations[0]
+            st.markdown("### Best Recommendation")
+            display_recommendation(best)
+            
+            # Add a note showing which models contributed to this recommendation
+            if 'sources' in best:
+                sources_str = ", ".join([s.capitalize() for s in best['sources']])
+                st.info(f"This recommendation was suggested by: {sources_str}")
+                
+                # Display explanation if available
+                if 'explanation' in best:
+                    st.markdown(f"*{best['explanation']}*")
+            
+            # Display other recommendations
+            st.markdown("### Other Recommendations")
+            for rec in recommendations[1:]:
+                display_recommendation(rec)
+                if 'sources' in rec:
+                    sources_str = ", ".join([s.capitalize() for s in rec['sources']])
+                    # Calculate confidence based on how many models agreed on this recommendation
+                    confidence = len(rec['sources']) / 3.0  # 3 models total
+                    confidence_text = "High" if confidence > 0.66 else "Medium" if confidence > 0.33 else "Low"
+                    confidence_color = "green" if confidence > 0.66 else "orange" if confidence > 0.33 else "red"
+                    
+                    st.markdown(f"""
+                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                        <div>Suggested by: {sources_str}</div>
+                        <div style="margin-left: 20px; background: {confidence_color}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 0.8em;">
+                            {confidence_text} Confidence
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Display explanation if available
+                    if 'explanation' in rec:
+                        st.markdown(f"*{rec['explanation']}*")
+        else:
+            st.error("No recommendations found with Ensemble method.")
+        
+        # Show map view
+        st.subheader("Map View: Recommended Places & Optimized Route")
+        recs_for_map = recommendations
+        show_map(recs_for_map, ors_key)
 
 #     # Now, call the autoencoder recommender with the provided_mask
 #     recommender = AutoencoderRecommender()
