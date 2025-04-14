@@ -9,6 +9,7 @@ import networkx as nx
 import openrouteservice
 from openrouteservice import convert
 import re
+import requests  # For calling the API
 import textblob
 import spacy
 
@@ -295,13 +296,13 @@ class TransferBasedRecommender:
         return self.tr.get_recommendations(
             user_preferences=user_prefs,
             user_lat=user_lat,
-            user_lon=user_lon,
+            user_lon=user_lng,
             places_df=self.places,
             top_n=num_recs
         )
 
 # ---------------------------
-# UI Setup: Sidebar and Main Input
+# Chat & UI Setup
 # ---------------------------
 st.sidebar.header("User Settings")
 user_lat = st.sidebar.number_input("Latitude", value=40.4168, format="%.4f")
@@ -309,10 +310,12 @@ user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
 ors_key = st.sidebar.text_input("OpenRouteService API Key (optional)", value="", type="password")
 method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based"])
 num_recs = 5
+
 st.title("Personalized Place Recommendations in Madrid")
 st.write("Rate your preferences. Check a category and use the slider (0–5) for those you care about.")
 st.subheader("💬 Chat with the Recommender")
 
+# Initialize chat messages in session state.
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -323,79 +326,39 @@ for msg in st.session_state.messages:
 user_msg = st.chat_input("Tell me what you're looking for (e.g., 'I love nature and museums')")
 
 # ---------------------------
-# Advanced Preference Extraction Using spaCy
+# API Call Helper Function for Preference Extraction
 # ---------------------------
-# Expanded keyword mappings including art galleries.
-similar_keywords = {
-    "nature": ["nature", "outdoors", "green", "trees"],
-    "parks": ["park", "picnic", "gardens"],
-    "museums": ["museum", "exhibit", "history"],
-    "cafes": ["cafe", "coffee", "espresso", "latte"],
-    "beaches": ["beach", "sand", "sea", "ocean"],
-    "restaurants": ["restaurant", "dinner", "food", "eat"],
-    "pubs/bars": ["bar", "pub", "beer", "cocktail"],
-    "monuments": ["monument", "statue", "landmark"],
-    "art galleries": ["art", "gallery", "galleries"]
-}
-
-# Load spaCy English model (ensure you've run: python -m spacy download en_core_web_sm)
-nlp = spacy.load("en_core_web_sm")
-
-def get_sentiment_rating(text):
-    """Compute a sentiment-based rating (0–5) using TextBlob."""
-    blob = textblob.TextBlob(text)
-    polarity = blob.sentiment.polarity  # Range: -1 to 1
-    return round((polarity + 1) * 2.5, 1)
-
-def extract_preferences_from_message(message, window_size=3):
-    """
-    Extracts category preferences using spaCy.
-    For each sentence, it looks for keywords defined in similar_keywords.
-    If a strong sentiment modifier (e.g. "love", "amazing") is found within a window of tokens,
-    the category is given a rating of 5. Otherwise, the sentence-level sentiment rating is used.
-    """
-    # Initialize all preferences to 0.
-    prefs = {cat: 0.0 for cat in categories}
-    # Define strong sentiment modifiers.
-    strong_modifiers = {"love", "loved", "adore", "amazing", "fantastic", "great", "incredible", "passionate"}
-    
-    doc = nlp(message)
-    for sent in doc.sents:
-        sent_text = sent.text
-        sent_rating = get_sentiment_rating(sent_text)
-        tokens = list(sent)
-        for i, token in enumerate(tokens):
-            token_text = token.text.lower()
-            for category, keywords in similar_keywords.items():
-                if token_text in keywords:
-                    # Check a window of tokens around the keyword.
-                    window_start = max(0, i - window_size)
-                    window_end = min(len(tokens), i + window_size + 1)
-                    window_tokens = tokens[window_start:window_end]
-                    if any(w.text.lower() in strong_modifiers for w in window_tokens):
-                        prefs[category] = max(prefs[category], 5.0)
-                    else:
-                        prefs[category] = max(prefs[category], sent_rating)
-    return prefs
+def get_api_preferences(input_text, exemplar_weight=0.3):
+    api_url = "http://localhost:8000/extract"  # Change this to your deployed API URL if different.
+    payload = {"input_text": input_text, "exemplar_weight": exemplar_weight}
+    try:
+        response = requests.post(api_url, json=payload)
+        response.raise_for_status()
+        return response.json()["preferences"]
+    except Exception as e:
+        st.error(f"API request failed: {e}")
+        return {}
 
 # ---------------------------
-# Process Chat Input and Set Preference Sliders
+# Process Chat Input Using API for Preference Extraction
 # ---------------------------
 if user_msg:
     st.session_state.messages.append({"role": "user", "content": user_msg})
-    extracted_prefs = extract_preferences_from_message(user_msg)
-    if not any(val > 0 for val in extracted_prefs.values()):
-        bot_reply = "Hmm, I couldn't find any familiar categories. Try something like 'parks, cafes, museums'."
+    # Call your external API to extract preferences
+    extracted_prefs = get_api_preferences(user_msg, exemplar_weight=0.3)
+    if not extracted_prefs:
+        bot_reply = "Hmm, I couldn't find any familiar categories. Try mentioning something like 'parks, cafes, museums'."
         st.session_state.messages.append({"role": "assistant", "content": bot_reply})
     else:
-        for cat, rating in extracted_prefs.items():
-            st.session_state[f"slider_{cat}"] = rating
-            st.session_state[f"chk_{cat}"] = True
-        bot_reply = "Great! Based on what you said, I've filled in some preferences. You can adjust them below if needed."
+        # Update sliders in session state based on extracted preferences.
+        for cat in categories:
+            if cat in extracted_prefs:
+                st.session_state[f"slider_{cat}"] = extracted_prefs[cat]
+                st.session_state[f"chk_{cat}"] = True
+        bot_reply = "Great! Based on your message, I've pre-filled some preferences. You can adjust them below if needed."
         st.session_state.messages.append({"role": "assistant", "content": bot_reply})
         st.rerun()
 
-# Modify slider loop to use session_state values
 def get_user_inputs():
     input_ratings = []
     provided_mask = []
@@ -413,9 +376,10 @@ def get_user_inputs():
     return np.array(input_ratings, dtype=np.float32).reshape(1, -1), np.array(provided_mask, dtype=bool).reshape(1, -1)
 
 input_ratings, provided_mask = get_user_inputs()
-
-# Adjust Transfer preferences too
 user_preferences_dict = {cat: float(st.session_state.get(f"slider_{cat}", 0.0)) for cat in categories}
+
+st.subheader("Your Preference Ratings")
+st.write(user_preferences_dict)
 
 # ---------------------------
 # Generate Recommendations
