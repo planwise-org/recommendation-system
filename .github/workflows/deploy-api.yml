@@ -1,6 +1,7 @@
 name: Deploy FastAPI App
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
