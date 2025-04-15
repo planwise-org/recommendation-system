@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import logging
 from sqlalchemy.exc import SQLAlchemyError
+from supabase import create_client, Client
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -12,8 +13,25 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
+if os.environ.get("ENV") == "local":
+    # Creates a connection to the database according to the env variables
+    DBUSER = os.environ.get("DBUSER")
+    DBPASS = os.environ.get("DBPASS")
+    DBHOST = os.environ.get("DBHOST")
+    DBNAME = os.environ.get("DBNAME")
+    DBPORT = os.environ.get("DBPORT")
+    DATABASE_URL = f"postgresql://{DBUSER}:{DBPASS}@{DBHOST}:{DBPORT}/{DBNAME}"
+    engine = create_engine(DATABASE_URL)
+
+elif os.environ.get("ENV") == "prod":
+    url: str = os.environ.get("SUPABASE_URL")
+    key: str = os.environ.get("SUPABASE_KEY")
+    supabase: Client = create_client(url, key)
+
+
 # Get database URL from environment variable or use default
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/planwise_db")
+# DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/planwise_db") # hardcoded for alexa
+
 logger.debug(f"Connecting to database at: {DATABASE_URL}")
 
 # Create SQLModel engine with a timeout
@@ -33,24 +51,27 @@ def get_session() -> Generator[Session, None, None]:
     Get a database session.
     """
     logger.debug("Creating new database session")
-    try:
+    if os.environ.get("ENV") == "local":
         with Session(engine) as session:
             yield session
-    except SQLAlchemyError as e:
-        logger.error(f"Database session error: {str(e)}")
-        raise
+    elif os.environ.get("ENV") == "prod":
+        yield supabase
+    else:
+        raise ValueError("Invalid environment")
+
 
 def init_db():
     """
     Initialize the database by creating all tables if they don't exist.
     """
     logger.debug("Initializing database tables")
-    try:
-        SQLModel.metadata.create_all(engine)
-        logger.debug("Database tables initialized successfully")
-    except SQLAlchemyError as e:
-        logger.error(f"Error initializing database: {str(e)}")
-        raise
+    if os.environ.get("ENV") == "local":
+        try:
+            SQLModel.metadata.create_all(engine)
+            logger.debug("Database tables initialized successfully")
+        except SQLAlchemyError as e:
+            logger.error(f"Error initializing database: {str(e)}")
+            raise
 
 def drop_all_tables():
     """

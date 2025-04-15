@@ -17,7 +17,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_session)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Create new user
     hashed_password = get_password_hash(user.password)
     db_user = User(
@@ -26,10 +26,18 @@ def create_user(user: UserCreate, db: Session = Depends(get_session)):
         full_name=user.full_name,
         role=user.role
     )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+    try:
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except Exception as e:
+        db.rollback()
+        print(f"Error creating user: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not create user"
+        )
 
 @router.get("/", response_model=List[UserRead])
 def get_users(
@@ -62,14 +70,14 @@ def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
     # Update user fields
     for field, value in user_update.dict(exclude_unset=True).items():
         if field == "password" and value:
             value = get_password_hash(value)
             field = "hashed_password"
         setattr(db_user, field, value)
-    
+
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -83,7 +91,7 @@ def delete_user(user_id: int, db: Session = Depends(get_session)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
     db.delete(user)
     db.commit()
     return None

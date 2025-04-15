@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Get secret key from environment variable or use default
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
+SECRET_KEY = os.environ.get("SECRET_KEY", "your-secret-key-here")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
