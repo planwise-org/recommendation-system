@@ -10,5 +10,6 @@ psycopg2-binary
 passlib
 jose==1.0.0
 python-jose==3.3.0
+pytest==8.3.5
 supabase
 python-dotenv
