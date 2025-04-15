@@ -49,4 +49,4 @@ jobs:
       - name: Deploy to Vercel
         run: |
             cd api
-            vercel --prod --token=${{ secrets.VERCEL_TOKEN }}
+            vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --env ENV=prod --env SUPABASE_URL=${{ secrets.SUPABASE_URL }} --env SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
