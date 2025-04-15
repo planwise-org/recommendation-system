@@ -45,9 +45,9 @@ jobs:
         run: |
             cd api
             vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-            vercel env add ENV=prod
-            vercel env add SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-            vercel env add SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
+            vercel env add ENV=prod --token=${{ secrets.VERCEL_TOKEN }}
+            vercel env add SUPABASE_URL=${{ secrets.SUPABASE_URL }} --token=${{ secrets.VERCEL_TOKEN }}
+            vercel env add SUPABASE_KEY=${{ secrets.SUPABASE_KEY }} --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy to Vercel
         run: |
