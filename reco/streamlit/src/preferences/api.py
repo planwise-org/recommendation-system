@@ -138,6 +138,13 @@ async def get_place_reviews(
 ):
     return db.query(Review).filter(Review.place_id == place_id).all()
 
+@app.get("/users/{username}/exists")
+async def check_user_exists(username: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"exists": True}
+
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

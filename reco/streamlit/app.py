@@ -31,6 +31,16 @@ if 'saved_preferences' not in st.session_state:
 
 def login_user(username: str, password: str):
     try:
+        # First check if user exists
+        check_user = requests.get(
+            f"http://localhost:8000/users/{username}/exists",
+            headers={"Content-Type": "application/json"}
+        )
+        if check_user.status_code == 404:
+            st.error("Username doesn't exist. Please sign up first.")
+            return False
+
+        # Try to login
         response = requests.post(
             "http://localhost:8000/token",
             data={"username": username, "password": password}
@@ -40,7 +50,12 @@ def login_user(username: str, password: str):
             st.session_state.user_token = data["access_token"]
             st.session_state.username = username
             return True
-        return False
+        elif response.status_code == 401:
+            st.error("Incorrect password. Please try again.")
+            return False
+        else:
+            st.error("Login failed. Please try again.")
+            return False
     except Exception as e:
         st.error(f"Login failed: {str(e)}")
         return False
