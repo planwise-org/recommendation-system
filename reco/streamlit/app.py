@@ -12,10 +12,84 @@ import re
 import requests  # For calling the API
 import textblob
 import spacy
+import json
+from datetime import datetime
 
 # For SVD-based recommendations:
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
+
+# Initialize session state for user authentication
+if 'user_token' not in st.session_state:
+    st.session_state.user_token = None
+if 'username' not in st.session_state:
+    st.session_state.username = None
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+def login_user(username: str, password: str):
+    try:
+        response = requests.post(
+            "http://localhost:8000/token",
+            data={"username": username, "password": password}
+        )
+        if response.status_code == 200:
+            data = response.json()
+            st.session_state.user_token = data["access_token"]
+            st.session_state.username = username
+            return True
+        return False
+    except Exception as e:
+        st.error(f"Login failed: {str(e)}")
+        return False
+
+def register_user(username: str, email: str, password: str):
+    try:
+        response = requests.post(
+            "http://localhost:8000/users/",
+            json={"username": username, "email": email, "password": password}
+        )
+        if response.status_code == 200:
+            st.success("Registration successful! Please log in.")
+            return True
+        else:
+            st.error(f"Registration failed: {response.json()['detail']}")
+            return False
+    except Exception as e:
+        st.error(f"Registration failed: {str(e)}")
+        return False
+
+# Show login/signup if not authenticated
+if not st.session_state.user_token:
+    st.title("Welcome to Place Recommender")
+    tab1, tab2 = st.tabs(["Login", "Sign Up"])
+    
+    with tab1:
+        st.header("Login")
+        login_username = st.text_input("Username", key="login_username")
+        login_password = st.text_input("Password", type="password", key="login_password")
+        if st.button("Login"):
+            if login_user(login_username, login_password):
+                st.success("Logged in successfully!")
+                st.rerun()
+    
+    with tab2:
+        st.header("Sign Up")
+        reg_username = st.text_input("Username", key="reg_username")
+        reg_email = st.text_input("Email", key="reg_email")
+        reg_password = st.text_input("Password", type="password", key="reg_password")
+        if st.button("Register"):
+            if register_user(reg_username, reg_email, reg_password):
+                st.info("Please proceed to login.")
+    st.stop()
+
+# Add logout button in sidebar if logged in
+if st.sidebar.button("Logout"):
+    st.session_state.user_token = None
+    st.session_state.username = None
+    st.rerun()
+
+st.sidebar.write(f"Logged in as: {st.session_state.username}")
 
 # ---------------------------
 # Helper Functions
@@ -296,7 +370,7 @@ class TransferBasedRecommender:
         return self.tr.get_recommendations(
             user_preferences=user_prefs,
             user_lat=user_lat,
-            user_lon=user_lng,
+            user_lon=user_lon,
             places_df=self.places,
             top_n=num_recs
         )
@@ -315,50 +389,40 @@ st.title("Personalized Place Recommendations in Madrid")
 st.write("Rate your preferences. Check a category and use the slider (0–5) for those you care about.")
 st.subheader("💬 Chat with the Recommender")
 
-# Initialize chat messages in session state.
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
 user_msg = st.chat_input("Tell me what you're looking for (e.g., 'I love nature and museums')")
 
-# ---------------------------
-# API Call Helper Function for Preference Extraction
-# ---------------------------
-def get_api_preferences(input_text, exemplar_weight=0.3):
-    api_url = "http://localhost:8000/extract"  # Change this to your deployed API URL if different.
-    payload = {"input_text": input_text, "exemplar_weight": exemplar_weight}
-    try:
-        response = requests.post(api_url, json=payload)
-        response.raise_for_status()
-        return response.json()["preferences"]
-    except Exception as e:
-        st.error(f"API request failed: {e}")
-        return {}
-
-# ---------------------------
-# Process Chat Input Using API for Preference Extraction
-# ---------------------------
 if user_msg:
     st.session_state.messages.append({"role": "user", "content": user_msg})
-    # Call your external API to extract preferences
-    extracted_prefs = get_api_preferences(user_msg, exemplar_weight=0.3)
-    if not extracted_prefs:
-        bot_reply = "Hmm, I couldn't find any familiar categories. Try mentioning something like 'parks, cafes, museums'."
-        st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-    else:
-        # Update sliders in session state based on extracted preferences.
-        for cat in categories:
-            if cat in extracted_prefs:
-                st.session_state[f"slider_{cat}"] = extracted_prefs[cat]
-                st.session_state[f"chk_{cat}"] = True
-        bot_reply = "Great! Based on your message, I've pre-filled some preferences. You can adjust them below if needed."
+    # Call the preference extraction API with authentication
+    headers = {"Authorization": f"Bearer {st.session_state.user_token}"}
+    try:
+        response = requests.post(
+            "http://localhost:8000/extract-preferences",
+            json={"text": user_msg},
+            headers=headers
+        )
+        if response.status_code == 200:
+            extracted_prefs = response.json()["preferences"]
+            if not extracted_prefs:
+                bot_reply = "Hmm, I couldn't find any familiar categories. Try mentioning something like 'parks, cafes, museums'."
+            else:
+                for cat in categories:
+                    if cat in extracted_prefs:
+                        st.session_state[f"slider_{cat}"] = extracted_prefs[cat]
+                        st.session_state[f"chk_{cat}"] = True
+                bot_reply = "Great! Based on your message, I've pre-filled some preferences. You can adjust them below if needed."
+        else:
+            bot_reply = "Sorry, I couldn't process your preferences right now."
         st.session_state.messages.append({"role": "assistant", "content": bot_reply})
         st.rerun()
+    except Exception as e:
+        st.error(f"Error processing preferences: {str(e)}")
 
+# After the chat input section, add back the user input handling:
 def get_user_inputs():
     input_ratings = []
     provided_mask = []
@@ -381,9 +445,7 @@ user_preferences_dict = {cat: float(st.session_state.get(f"slider_{cat}", 0.0)) 
 st.subheader("Your Preference Ratings")
 st.write(user_preferences_dict)
 
-# ---------------------------
 # Generate Recommendations
-# ---------------------------
 if st.button("Generate Recommendations"):
     # Compute predicted ratings using the autoencoder (for both methods)
     input_scaled = scaler.transform(input_ratings)
@@ -421,6 +483,7 @@ if st.button("Generate Recommendations"):
                 'pred_factor': best_factor,
                 'category': best_cat
             })
+        
         if not candidates:
             st.error("No candidate places found within 2 km.")
         else:
@@ -432,6 +495,7 @@ if st.button("Generate Recommendations"):
             w_rating = 0.2
             w_reviews = 0.2
             w_pred = 0.5
+            
             for candidate in candidates:
                 row_dict = candidate['row']
                 dist = candidate['distance']
@@ -439,14 +503,16 @@ if st.button("Generate Recommendations"):
                 norm_rating = (row_dict.get('rating', 0) / 5.0) if row_dict.get('rating') is not None else 0
                 norm_reviews = (np.log(row_dict.get('user_ratings_total', 0) + 1) / np.log(max_reviews + 1)) if row_dict.get('user_ratings_total') is not None else 0
                 candidate['score'] = (w_distance * distance_score +
-                                      w_rating * norm_rating +
-                                      w_reviews * norm_reviews +
-                                      w_pred * candidate['pred_factor'])
+                                    w_rating * norm_rating +
+                                    w_reviews * norm_reviews +
+                                    w_pred * candidate['pred_factor'])
+            
             groups = {}
             for candidate in candidates:
                 groups.setdefault(candidate['category'], []).append(candidate)
             for cat in groups:
                 groups[cat] = sorted(groups[cat], key=lambda x: x['score'], reverse=True)
+            
             final_candidates = []
             round_idx = 0
             while len(final_candidates) < 5:
@@ -529,3 +595,38 @@ if st.button("Generate Recommendations"):
         
         st.subheader("Map View: Recommended Places & Optimized Route")
         show_map(recommendations, ors_key)
+
+# Add review functionality after recommendations are generated
+if 'recommendations' in locals():
+    st.subheader("Add a Review")
+    for rec in recommendations:
+        with st.expander(f"Review {rec.get('name', 'Place')}"):
+            rating = st.slider(
+                "Rating",
+                min_value=1.0,
+                max_value=5.0,
+                value=3.0,
+                step=0.5,
+                key=f"rating_{rec.get('place_id')}"
+            )
+            comment = st.text_area(
+                "Comment",
+                key=f"comment_{rec.get('place_id')}"
+            )
+            if st.button("Submit Review", key=f"submit_{rec.get('place_id')}"):
+                try:
+                    response = requests.post(
+                        "http://localhost:8000/reviews/",
+                        json={
+                            "place_id": rec.get('place_id'),
+                            "rating": rating,
+                            "comment": comment
+                        },
+                        headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                    )
+                    if response.status_code == 200:
+                        st.success("Review submitted successfully!")
+                    else:
+                        st.error("Failed to submit review.")
+                except Exception as e:
+                    st.error(f"Error submitting review: {str(e)}")
