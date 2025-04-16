@@ -28,6 +28,12 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if 'saved_preferences' not in st.session_state:
     st.session_state.saved_preferences = {}
+if 'saved_reviews' not in st.session_state:
+    st.session_state.saved_reviews = {}
+if 'current_recommendations' not in st.session_state:
+    st.session_state.current_recommendations = None
+if 'current_method' not in st.session_state:
+    st.session_state.current_method = None
 
 def login_user(username: str, password: str):
     try:
@@ -108,24 +114,43 @@ if st.sidebar.button("Logout"):
 
 st.sidebar.write(f"Logged in as: {st.session_state.username}")
 
-# After login, load saved preferences
+# After login, load saved preferences and reviews
 if st.session_state.user_token:
     try:
-        response = requests.get(
+        # Load preferences
+        pref_response = requests.get(
             "http://localhost:8000/preferences/",
             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
         )
-        if response.status_code == 200:
+        if pref_response.status_code == 200:
             st.session_state.saved_preferences = {
                 pref['category']: pref['rating'] 
-                for pref in response.json()
+                for pref in pref_response.json()
             }
             # Set the sliders for saved preferences
             for cat, rating in st.session_state.saved_preferences.items():
                 st.session_state[f"slider_{cat}"] = rating
                 st.session_state[f"chk_{cat}"] = True
+        
+        # Load reviews
+        review_response = requests.get(
+            "http://localhost:8000/reviews/",
+            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+        )
+        if review_response.status_code == 200:
+            reviews = review_response.json()
+            # Store reviews by place_id
+            st.session_state.saved_reviews = {
+                review['place_id']: {
+                    'rating': review['rating'],
+                    'comment': review['comment'],
+                    'submitted': True,
+                    'previous_submission': True
+                }
+                for review in reviews
+            }
     except Exception as e:
-        st.error(f"Error loading preferences: {str(e)}")
+        st.error(f"Error loading user data: {str(e)}")
 
 # ---------------------------
 # Helper Functions
@@ -238,6 +263,99 @@ def display_recommendation(rec):
                 st.write(f"**Types:** {rec.get('types', 'N/A')}")
                 st.write(f"**Description:** {rec.get('description', 'No description available.')}")
                 st.write(f"**Coordinates:** (Lat: {rec.get('lat', 'N/A')}, Lon: {rec.get('lng', 'N/A')})")
+
+def add_review_section(recommendations):
+    st.subheader("Add Reviews")
+    
+    # Store review states in session state
+    if 'review_states' not in st.session_state:
+        st.session_state.review_states = {}
+    
+    for idx, rec in enumerate(recommendations):
+        # Handle different recommendation formats
+        if isinstance(rec, dict):
+            place_id = rec.get('place_id', str(idx))
+            place_name = rec.get('name', 'Place')
+        else:
+            place_id = str(idx)
+            place_name = getattr(rec, 'name', f'Place {idx}')
+        
+        # Create unique key for this recommendation
+        review_key = f"{place_id}_{idx}"
+        
+        # Check if we have a saved review for this place
+        if place_id in st.session_state.saved_reviews:
+            st.session_state.review_states[review_key] = st.session_state.saved_reviews[place_id].copy()
+        elif review_key not in st.session_state.review_states:
+            st.session_state.review_states[review_key] = {
+                'rating': 3.0,
+                'comment': '',
+                'submitted': False,
+                'previous_submission': False
+            }
+        
+        state = st.session_state.review_states[review_key]
+        
+        with st.expander(f"Review {place_name}"):
+            if not state['submitted']:
+                # Rating slider
+                rating = st.slider(
+                    "Rating",
+                    min_value=1.0,
+                    max_value=5.0,
+                    value=state['rating'],
+                    step=0.5,
+                    key=f"rating_{review_key}"
+                )
+                
+                # Comment text area
+                comment = st.text_area(
+                    "Comment",
+                    value=state['comment'],
+                    key=f"comment_{review_key}"
+                )
+                
+                # Update state with current values
+                state['rating'] = rating
+                state['comment'] = comment
+                
+                submit_label = "Update Review" if state.get('previous_submission') else "Submit Review"
+                if st.button(submit_label, key=f"submit_{review_key}"):
+                    try:
+                        response = requests.post(
+                            "http://localhost:8000/reviews/",
+                            json={
+                                "place_id": place_id,
+                                "rating": rating,
+                                "comment": comment
+                            },
+                            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                        )
+                        if response.status_code == 200:
+                            # Update both states after successful submission
+                            state['submitted'] = True
+                            state['previous_submission'] = True
+                            st.session_state.saved_reviews[place_id] = {
+                                'rating': rating,
+                                'comment': comment,
+                                'submitted': True,
+                                'previous_submission': True
+                            }
+                            st.success(f"Review {'updated' if state.get('previous_submission') else 'submitted'} successfully!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to submit review.")
+                    except Exception as e:
+                        st.error(f"Error submitting review: {str(e)}")
+            else:
+                # Display the submitted review
+                st.write(f"Your rating: {state['rating']:.1f} ⭐")
+                if state['comment']:
+                    st.write(f"Your comment: {state['comment']}")
+                
+                if st.button("Edit Review", key=f"edit_{review_key}"):
+                    state['submitted'] = False
+                    st.rerun()
 
 # ---------------------------
 # Constants and Mappings
@@ -474,21 +592,59 @@ if user_msg:
 def get_user_inputs():
     input_ratings = []
     provided_mask = []
+    
+    # Create columns for better layout
+    cols = st.columns([1, 2])
+    with cols[0]:
+        st.write("**Select Categories**")
+    with cols[1]:
+        st.write("**Rate (0-5)**")
+    
     for cat in categories:
         default_chk = st.session_state.get(f"chk_{cat}", False)
         default_val = st.session_state.get(f"slider_{cat}", 
                      st.session_state.saved_preferences.get(cat, 0.0))
-        provide = st.checkbox(f"Rate **{cat}**", value=default_chk, key=f"chk_{cat}")
-        if provide:
-            rating = st.slider(f"Rating for {cat}:", 
-                             min_value=0.0, max_value=5.0, 
-                             step=0.5, value=default_val, 
-                             key=f"slider_{cat}")
-            input_ratings.append(rating)
-            provided_mask.append(True)
-        else:
-            input_ratings.append(0.0)
-            provided_mask.append(False)
+        
+        cols = st.columns([1, 2])
+        with cols[0]:
+            provide = st.checkbox(f"{cat}", value=default_chk, key=f"chk_{cat}")
+        with cols[1]:
+            if provide:
+                rating = st.slider("", 
+                                min_value=0.0, max_value=5.0, 
+                                step=0.5, value=default_val, 
+                                key=f"slider_{cat}")
+                
+                # Save preference to database if it's changed
+                if rating != st.session_state.saved_preferences.get(cat, 0.0):
+                    try:
+                        response = requests.post(
+                            "http://localhost:8000/preferences/",
+                            json={"category": cat, "rating": rating},
+                            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                        )
+                        if response.status_code == 200:
+                            st.session_state.saved_preferences[cat] = rating
+                    except Exception as e:
+                        st.error(f"Error saving preference for {cat}: {str(e)}")
+                
+                input_ratings.append(rating)
+                provided_mask.append(True)
+            else:
+                # If checkbox is unchecked, remove preference from database
+                if cat in st.session_state.saved_preferences:
+                    try:
+                        response = requests.delete(
+                            f"http://localhost:8000/preferences/{cat}",
+                            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                        )
+                        if response.status_code == 200:
+                            st.session_state.saved_preferences.pop(cat, None)
+                    except Exception as e:
+                        st.error(f"Error removing preference for {cat}: {str(e)}")
+                input_ratings.append(0.0)
+                provided_mask.append(False)
+    
     return np.array(input_ratings, dtype=np.float32).reshape(1, -1), np.array(provided_mask, dtype=bool).reshape(1, -1)
 
 input_ratings, provided_mask = get_user_inputs()
@@ -497,8 +653,11 @@ user_preferences_dict = {cat: float(st.session_state.get(f"slider_{cat}", 0.0)) 
 st.subheader("Your Preference Ratings")
 st.write(user_preferences_dict)
 
-# Generate Recommendations
+# Modify the Generate Recommendations button section
 if st.button("Generate Recommendations"):
+    # Store the current method
+    st.session_state.current_method = method
+    
     # Compute predicted ratings using the autoencoder (for both methods)
     input_scaled = scaler.transform(input_ratings)
     predicted_scaled = auto_model.predict(input_scaled)
@@ -538,6 +697,7 @@ if st.button("Generate Recommendations"):
         
         if not candidates:
             st.error("No candidate places found within 2 km.")
+            st.session_state.current_recommendations = None
         else:
             max_reviews = max(
                 [cand['row'].get('user_ratings_total', 1) for cand in candidates 
@@ -595,90 +755,54 @@ if st.button("Generate Recommendations"):
                     'score': candidate.get('score', 0),
                     'lat': row.get('lat', 'N/A'),
                     'lng': row.get('lng', 'N/A'),
-                    'category': candidate.get('category', 'N/A')
+                    'category': candidate.get('category', 'N/A'),
+                    'place_id': row.get('place_id', str(row.get('id', '')))
                 }
                 flat_final_candidates.append(flat_candidate)
             
-            st.subheader("Top Place Recommendations (Autoencoder-Based)")
-            if flat_final_candidates:
-                st.markdown("### Best Recommendation")
-                display_recommendation(flat_final_candidates[0])
-                st.markdown("### Other Recommendations")
-                for rec in flat_final_candidates[1:]:
-                    display_recommendation(rec)
-            else:
-                st.error("No balanced recommendations found.")
+            # Store recommendations in session state
+            st.session_state.current_recommendations = flat_final_candidates
             
-            st.subheader("Map View: Recommended Places & Optimized Route")
-            recs_for_map = [{'row': rec} for rec in flat_final_candidates]
-            show_map(recs_for_map, ors_key)
-    
     elif method == "SVD-Based":
         st.subheader("SVD-Based Recommendations")
         svd_rec = SVDPlaceRecommender()
         svd_rec.evaluate_model(places)
         svd_rec.fit(places)
         recommendations = svd_rec.get_recommendations(places, user_lat, user_lng, predicted_ratings_dict, top_n=10, max_distance=5)
+        # Store recommendations in session state
+        st.session_state.current_recommendations = recommendations
         
-        st.subheader("Top Place Recommendations (SVD-Based)")
-        if recommendations:
-            best = recommendations[0]
-            st.markdown("### Best Recommendation")
-            display_recommendation(best)
-            st.markdown("### Other Recommendations")
-            for rec in recommendations[1:]:
-                display_recommendation(rec)
-        else:
-            st.error("No recommendations found with SVD-based method.")
-        
-        st.subheader("Map View: Recommended Places & Optimized Route")
-        recs_for_map = [{'row': rec} for rec in recommendations]
-        show_map(recs_for_map, ors_key)
-    
     elif method == "Transfer-Based":
         st.subheader("Transfer-Based Recommendations")
         recommender = TransferBasedRecommender()
         recommendations = recommender.get_recommendations(user_lat, user_lng, user_preferences_dict, num_recs)
-        if recommendations:
-            for rec in recommendations:
+        # Store recommendations in session state
+        st.session_state.current_recommendations = recommendations
+
+# After the Generate Recommendations button section, add this code to display recommendations
+if st.session_state.current_recommendations:
+    method = st.session_state.current_method
+    recommendations = st.session_state.current_recommendations
+    
+    st.subheader(f"Top Place Recommendations ({method})")
+    if recommendations:
+        if method == "Autoencoder-Based":
+            st.markdown("### Best Recommendation")
+            display_recommendation(recommendations[0])
+            st.markdown("### Other Recommendations")
+            for rec in recommendations[1:]:
                 display_recommendation(rec)
         else:
-            st.error("No recommendations found with Transfer-Based method.")
+            for rec in recommendations:
+                display_recommendation(rec)
         
+        # Add review section
+        add_review_section(recommendations)
+        
+        # Show map
         st.subheader("Map View: Recommended Places & Optimized Route")
-        show_map(recommendations, ors_key)
-
-# Add review functionality after recommendations are generated
-if 'recommendations' in locals():
-    st.subheader("Add a Review")
-    for rec in recommendations:
-        with st.expander(f"Review {rec.get('name', 'Place')}"):
-            rating = st.slider(
-                "Rating",
-                min_value=1.0,
-                max_value=5.0,
-                value=3.0,
-                step=0.5,
-                key=f"rating_{rec.get('place_id')}"
-            )
-            comment = st.text_area(
-                "Comment",
-                key=f"comment_{rec.get('place_id')}"
-            )
-            if st.button("Submit Review", key=f"submit_{rec.get('place_id')}"):
-                try:
-                    response = requests.post(
-                        "http://localhost:8000/reviews/",
-                        json={
-                            "place_id": rec.get('place_id'),
-                            "rating": rating,
-                            "comment": comment
-                        },
-                        headers={"Authorization": f"Bearer {st.session_state.user_token}"}
-                    )
-                    if response.status_code == 200:
-                        st.success("Review submitted successfully!")
-                    else:
-                        st.error("Failed to submit review.")
-                except Exception as e:
-                    st.error(f"Error submitting review: {str(e)}")
+        if method == "Autoencoder-Based":
+            recs_for_map = [{'row': rec} for rec in recommendations]
+            show_map(recs_for_map, ors_key)
+        else:
+            show_map(recommendations, ors_key)

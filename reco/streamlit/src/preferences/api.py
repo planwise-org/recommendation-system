@@ -111,6 +111,23 @@ async def create_preference(
     db.refresh(db_preference)
     return db_preference
 
+@app.delete("/preferences/{category}")
+async def delete_preference(
+    category: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    preference = db.query(Preference).filter(
+        Preference.user_id == current_user.id,
+        Preference.category == category
+    ).first()
+    
+    if preference:
+        db.delete(preference)
+        db.commit()
+        return {"message": f"Preference for {category} deleted"}
+    return {"message": f"No preference found for {category}"}
+
 # Review endpoints
 @app.post("/reviews/", response_model=ReviewResponse)
 async def create_review(
@@ -137,6 +154,29 @@ async def get_place_reviews(
     db: Session = Depends(get_db)
 ):
     return db.query(Review).filter(Review.place_id == place_id).all()
+
+@app.get("/reviews/user/{place_id}")
+async def get_user_place_review(
+    place_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    review = db.query(Review).filter(
+        Review.user_id == current_user.id,
+        Review.place_id == place_id
+    ).order_by(Review.id.desc()).first()
+    
+    if review:
+        return {
+            "rating": review.rating,
+            "comment": review.comment,
+            "submitted": True
+        }
+    return {
+        "rating": 3.0,
+        "comment": "",
+        "submitted": False
+    }
 
 @app.get("/users/{username}/exists")
 async def check_user_exists(username: str, db: Session = Depends(get_db)):
