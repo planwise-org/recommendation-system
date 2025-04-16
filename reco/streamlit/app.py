@@ -26,6 +26,8 @@ if 'username' not in st.session_state:
     st.session_state.username = None
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if 'saved_preferences' not in st.session_state:
+    st.session_state.saved_preferences = {}
 
 def login_user(username: str, password: str):
     try:
@@ -90,6 +92,25 @@ if st.sidebar.button("Logout"):
     st.rerun()
 
 st.sidebar.write(f"Logged in as: {st.session_state.username}")
+
+# After login, load saved preferences
+if st.session_state.user_token:
+    try:
+        response = requests.get(
+            "http://localhost:8000/preferences/",
+            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+        )
+        if response.status_code == 200:
+            st.session_state.saved_preferences = {
+                pref['category']: pref['rating'] 
+                for pref in response.json()
+            }
+            # Set the sliders for saved preferences
+            for cat, rating in st.session_state.saved_preferences.items():
+                st.session_state[f"slider_{cat}"] = rating
+                st.session_state[f"chk_{cat}"] = True
+    except Exception as e:
+        st.error(f"Error loading preferences: {str(e)}")
 
 # ---------------------------
 # Helper Functions
@@ -410,11 +431,23 @@ if user_msg:
             if not extracted_prefs:
                 bot_reply = "Hmm, I couldn't find any familiar categories. Try mentioning something like 'parks, cafes, museums'."
             else:
-                for cat in categories:
-                    if cat in extracted_prefs:
-                        st.session_state[f"slider_{cat}"] = extracted_prefs[cat]
-                        st.session_state[f"chk_{cat}"] = True
-                bot_reply = "Great! Based on your message, I've pre-filled some preferences. You can adjust them below if needed."
+                # Update saved preferences with new ones
+                st.session_state.saved_preferences.update(extracted_prefs)
+                
+                # Update the UI sliders and save to database
+                for cat, rating in extracted_prefs.items():
+                    st.session_state[f"slider_{cat}"] = rating
+                    st.session_state[f"chk_{cat}"] = True
+                    try:
+                        requests.post(
+                            "http://localhost:8000/preferences/",
+                            json={"category": cat, "rating": rating},
+                            headers=headers
+                        )
+                    except Exception as e:
+                        st.error(f"Error saving preference for {cat}: {str(e)}")
+                
+                bot_reply = "Great! I've updated your preferences. You can adjust them below if needed."
         else:
             bot_reply = "Sorry, I couldn't process your preferences right now."
         st.session_state.messages.append({"role": "assistant", "content": bot_reply})
@@ -422,16 +455,20 @@ if user_msg:
     except Exception as e:
         st.error(f"Error processing preferences: {str(e)}")
 
-# After the chat input section, add back the user input handling:
+# Modify get_user_inputs to use saved preferences
 def get_user_inputs():
     input_ratings = []
     provided_mask = []
     for cat in categories:
         default_chk = st.session_state.get(f"chk_{cat}", False)
-        default_val = st.session_state.get(f"slider_{cat}", 0.0)
+        default_val = st.session_state.get(f"slider_{cat}", 
+                     st.session_state.saved_preferences.get(cat, 0.0))
         provide = st.checkbox(f"Rate **{cat}**", value=default_chk, key=f"chk_{cat}")
         if provide:
-            rating = st.slider(f"Rating for {cat}:", min_value=0.0, max_value=5.0, step=0.5, value=default_val, key=f"slider_{cat}")
+            rating = st.slider(f"Rating for {cat}:", 
+                             min_value=0.0, max_value=5.0, 
+                             step=0.5, value=default_val, 
+                             key=f"slider_{cat}")
             input_ratings.append(rating)
             provided_mask.append(True)
         else:
