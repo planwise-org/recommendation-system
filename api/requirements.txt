@@ -12,7 +12,7 @@ passlib
 jose==1.0.0
 python-jose==3.3.0
 pytest==8.3.5
-pytest-asyncio==0.26.0
+pytest-env==1.1.5
 supabase
 python-multipart==0.0.9
 email-validator==2.1.0.post1

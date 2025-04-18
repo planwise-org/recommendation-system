@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 print("ENV: ", os.environ.get("ENV"))
-print("ENV: ", os.getenv("ENV"))
 
 if os.environ.get("ENV") == "test":
     DATABASE_URL = "sqlite:///:memory:"
