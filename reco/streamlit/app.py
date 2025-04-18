@@ -510,7 +510,7 @@ st.sidebar.header("User Settings")
 user_lat = st.sidebar.number_input("Latitude", value=40.4168, format="%.4f")
 user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
 #num_recs = st.sidebar.slider("Number of Recommendations", 1, 20, 5)
-ors_key = st.sidebar.text_input("OpenRouteService API Key (optional)", value="", type="password")
+ors_key = st.secrets.get("ORS_API_KEY", "")
 method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Ensemble"])
 profile = st.sidebar.selectbox(
     "Routing Profile",
