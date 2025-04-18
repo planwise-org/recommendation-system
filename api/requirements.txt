@@ -1,3 +1,4 @@
+
 fastapi-cli==0.0.6
 fastapi==0.115.6
 sqlmodel==0.0.22
@@ -12,4 +13,11 @@ jose==1.0.0
 python-jose==3.3.0
 pytest==8.3.5
 supabase
-python-dotenv
+python-multipart==0.0.9
+email-validator==2.1.0.post1
+numpy==1.26.4
+scikit-learn==1.4.1.post1
+pandas==2.2.1
+python-dotenv==1.0.1
+PyYAML==6.0.1
+supabase==2.15.0
