@@ -12,6 +12,8 @@ import os
 # For SVD-based recommendations:
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
+from pathway import get_optimal_path
+from pathway import reorder_with_tsp
 
 # ---------------------------
 # Helper Functions
@@ -37,80 +39,90 @@ def euclidean_distance(p1, p2):
     """Euclidean distance between two points (lat,lon)."""
     return math.hypot(p1[0]-p2[0], p1[1]-p2[1])
 
-def show_map(recs, ors_key):
-    """Display an interactive PyDeck map with an optimized route and text labels."""
-    # Determine if the recs are nested (with key 'row') or flat.
+def show_map(recs, ors_key, profile="foot-walking"):
     if not recs:
         return
+
+    import openrouteservice
+    from openrouteservice import exceptions
+
     if 'row' in recs[0]:
         names = [cand['row']['name'] for cand in recs]
-        lats  = [cand['row']['lat'] for cand in recs]
-        lons  = [cand['row']['lng'] for cand in recs]
+        lats = [cand['row']['lat'] for cand in recs]
+        lons = [cand['row']['lng'] for cand in recs]
     else:
         names = [cand['name'] for cand in recs]
-        lats  = [cand['lat'] for cand in recs]
-        lons  = [cand['lng'] for cand in recs]
+        lats = [cand['lat'] for cand in recs]
+        lons = [cand['lng'] for cand in recs]
 
+    coords = list(zip(lons, lats))  # (lng, lat)
     map_df = pd.DataFrame({
         'name': names,
         'lat': lats,
         'lon': lons
     })
 
-    route_coords = None
-    if not map_df.empty:
-        if ors_key and ors_key != "":
-            try:
-                client = openrouteservice.Client(key=ors_key)
-                coords = map_df[['lon', 'lat']].values.tolist()
-                route_geojson = client.directions(coords, profile='driving-car', format='geojson')
-                route_coords = route_geojson['features'][0]['geometry']['coordinates']
-            except Exception as e:
-                st.error(f"Routing API error: {e}")
-                route_coords = None
-        # Fallback: TSP optimization using Euclidean distances.
-        if route_coords is None:
-            G = nx.complete_graph(len(map_df))
-            coords = map_df[['lat', 'lon']].values
-            for i, j in G.edges():
-                G[i][j]['weight'] = euclidean_distance((coords[i][0], coords[i][1]),
-                                                        (coords[j][0], coords[j][1]))
-            tsp_route = nx.approximation.traveling_salesman_problem(G, weight='weight')
-            optimized_data = map_df.iloc[tsp_route].reset_index(drop=True)
-            route_coords = optimized_data[['lon', 'lat']].values.tolist()
-        else:
-            optimized_data = map_df.copy()
+    full_route_coords = []
 
-        text_layer = pdk.Layer(
-            "TextLayer",
-            data=optimized_data,
-            get_position='[lon, lat]',
-            get_text='name',
-            get_color='[255, 255, 255, 255]',
-            get_size=16,
-            get_angle=0,
-            anchor='middle'
-        )
-        path_layer = pdk.Layer(
-            "PathLayer",
-            data=[{"path": route_coords}],
-            get_path="path",
-            get_color="[0, 0, 255]",
-            width_scale=20,
-            width_min_pixels=3,
-        )
-        view_state = pdk.ViewState(
-            latitude=optimized_data['lat'].mean(),
-            longitude=optimized_data['lon'].mean(),
-            zoom=14,
-            pitch=0,
-        )
-        deck = pdk.Deck(
-            layers=[path_layer, text_layer],
-            initial_view_state=view_state,
-            tooltip={"text": "{name}"}
-        )
-        st.pydeck_chart(deck)
+    if ors_key.strip():
+        try:
+            client = openrouteservice.Client(key=ors_key)
+
+            for i in range(len(coords) - 1):
+                segment = client.directions(
+                    [coords[i], coords[i + 1]],
+                    profile=profile,
+                    format='geojson'
+                )
+                path = segment['features'][0]['geometry']['coordinates']
+                if full_route_coords:
+                    full_route_coords.extend(path[1:])  # Avoid duplicate joints
+                else:
+                    full_route_coords.extend(path)
+        except exceptions.ApiError as e:
+            st.error(f"OpenRouteService API Error: {e}")
+            full_route_coords = coords
+        except Exception as e:
+            st.error(f"Unexpected routing error: {e}")
+            full_route_coords = coords
+    else:
+        st.warning("No ORS key provided. Route is shown as straight lines.")
+        full_route_coords = coords
+
+    text_layer = pdk.Layer(
+        "TextLayer",
+        data=map_df,
+        get_position='[lon, lat]',
+        get_text='name',
+        get_color='[255, 255, 255, 255]',
+        get_size=16,
+        anchor='middle'
+    )
+
+    path_layer = pdk.Layer(
+        "PathLayer",
+        data=[{"path": full_route_coords}],
+        get_path="path",
+        get_color="[0, 0, 255]",
+        width_scale=20,
+        width_min_pixels=3,
+    )
+
+    view_state = pdk.ViewState(
+        latitude=map_df['lat'].mean(),
+        longitude=map_df['lon'].mean(),
+        zoom=14,
+        pitch=0,
+    )
+
+    deck = pdk.Deck(
+        layers=[path_layer, text_layer],
+        initial_view_state=view_state,
+        tooltip={"text": "{name}"}
+    )
+
+    st.pydeck_chart(deck)
+
 def display_recommendation(rec):
 
     #st.write("DEBUG: Recommendation Data:", rec)
@@ -129,6 +141,47 @@ def display_recommendation(rec):
                 st.write(f"**Description:** {rec.get('description', 'No description available.')}")
                 st.write(f"**Coordinates:** (Lat: {rec.get('lat', 'N/A')}, Lon: {rec.get('lng', 'N/A')})")
 
+def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile):
+    recs_for_map = [{'row': rec} for rec in recommendations] if 'row' not in recommendations[0] else recommendations
+
+    # Always apply RL optimization
+    st.subheader("Optimized Route Based on Preferences + Distance")
+    valid_recs = [
+        p if 'row' not in p else p['row'] for p in recs_for_map
+        if (p.get("lat") if 'row' not in p else p['row'].get("lat")) is not None and
+           (p.get("lng") if 'row' not in p else p['row'].get("lng")) is not None
+    ]
+    try:
+        rl_path = get_optimal_path(valid_recs, user_lat, user_lng)
+        if rl_path:
+            # Reorder RL output using TSP (Haversine)
+            rl_path = reorder_with_tsp(rl_path)
+            recs_for_map = [{'row': rec} for rec in rl_path]
+            st.success("RL + TSP Reordering Applied Successfully!")
+    except Exception as e:
+        st.warning(f"RL optimization failed: {e}")
+
+    st.subheader("Map View: Recommended Places & Optimized Route")
+    st.markdown(f"**Routing Mode:** `{profile.replace('-', ' ').capitalize()}`")
+    show_map(recs_for_map, ors_key, profile=profile)
+
+    # Route Breakdown
+    st.subheader("Route Details")
+    total_distance = 0
+    for i in range(len(recs_for_map)):
+        current = recs_for_map[i]['row'] if 'row' in recs_for_map[i] else recs_for_map[i]
+        st.markdown(f"**{i+1}. {current['name']}** *(Category: {current.get('category', 'N/A')})*")
+
+        if i == 0:
+            dist = haversine(user_lat, user_lng, current['lat'], current['lng']) / 1000
+            total_distance += dist
+            st.write(f"\u21b3 Distance from start location: `{dist:.2f} km`")
+        else:
+            prev = recs_for_map[i - 1]['row'] if 'row' in recs_for_map[i - 1] else recs_for_map[i - 1]
+            dist = haversine(prev['lat'], prev['lng'], current['lat'], current['lng']) / 1000
+            total_distance += dist
+            st.write(f"\u21b3 Distance from previous: `{dist:.2f} km`")
+    st.markdown(f"**Total Travel Distance:** `{total_distance:.2f} km`")
 # ---------------------------
 # Load Resources
 # ---------------------------
@@ -459,6 +512,13 @@ user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
 #num_recs = st.sidebar.slider("Number of Recommendations", 1, 20, 5)
 ors_key = st.sidebar.text_input("OpenRouteService API Key (optional)", value="", type="password")
 method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Ensemble"])
+profile = st.sidebar.selectbox(
+    "Routing Profile",
+    options=["foot-walking", "driving-car"],
+    index=0,
+    help="Choose between walking or driving for route optimization."
+)
+
 # Add ensemble weights if ensemble method is selected
 if method == "Ensemble":
     st.sidebar.subheader("Ensemble Weights")
@@ -502,6 +562,7 @@ user_preferences_dict = {cat: float(st.session_state.get(f"slider_{cat}", 0.0)) 
 # ---------------------------
 # Generate Recommendations
 # ---------------------------
+# Route Optimization Preference (for all methods)
 if st.button("Generate Recommendations"):
     # Compute predicted ratings using the autoencoder (for both methods)
     input_scaled = scaler.transform(input_ratings)
@@ -519,7 +580,7 @@ if st.button("Generate Recommendations"):
 
     # Depending on the method, call the corresponding recommender
     if method == "Autoencoder-Based":
-        # --- Autoencoder-Based Recommendations ---
+        st.subheader("Autoencoder-Based Recommendations")
         candidates = []
         for idx, row in places.iterrows():
             dist = haversine(user_lat, user_lng, row['lat'], row['lng'])
@@ -527,7 +588,6 @@ if st.button("Generate Recommendations"):
                 continue
             best_cat = None
             best_factor = 0
-            # Compare using processed types for matching
             for cat, pred_val in predicted_ratings_dict.items():
                 mapped_types = category_to_place_types.get(cat, [])
                 if any(pt in row['types_processed'] for pt in mapped_types):
@@ -537,20 +597,19 @@ if st.button("Generate Recommendations"):
                         best_cat = cat
             if best_cat is None:
                 continue
-            # Convert row to dictionary so keys are accessible via .get()
             candidates.append({
                 'row': row.to_dict(),
                 'distance': dist,
                 'pred_factor': best_factor,
                 'category': best_cat
             })
+
         if not candidates:
             st.error("No candidate places found within 2 km.")
         else:
-            # Compute normalization values
             max_reviews = max(
                 [cand['row'].get('user_ratings_total', 1) for cand in candidates
-                 if pd.notna(cand['row'].get('user_ratings_total'))] or [1]
+                if pd.notna(cand['row'].get('user_ratings_total'))] or [1]
             )
             w_distance = 0.1
             w_rating = 0.2
@@ -563,15 +622,16 @@ if st.button("Generate Recommendations"):
                 norm_rating = (row_dict.get('rating', 0) / 5.0) if row_dict.get('rating') is not None else 0
                 norm_reviews = (np.log(row_dict.get('user_ratings_total', 0) + 1) / np.log(max_reviews + 1)) if row_dict.get('user_ratings_total') is not None else 0
                 candidate['score'] = (w_distance * distance_score +
-                                      w_rating * norm_rating +
-                                      w_reviews * norm_reviews +
-                                      w_pred * candidate['pred_factor'])
-            # Group candidates by category for balanced selection
+                                    w_rating * norm_rating +
+                                    w_reviews * norm_reviews +
+                                    w_pred * candidate['pred_factor'])
+
             groups = {}
             for candidate in candidates:
                 groups.setdefault(candidate['category'], []).append(candidate)
             for cat in groups:
                 groups[cat] = sorted(groups[cat], key=lambda x: x['score'], reverse=True)
+
             final_candidates = []
             round_idx = 0
             while len(final_candidates) < 5:
@@ -585,9 +645,9 @@ if st.button("Generate Recommendations"):
                 if not added_this_round:
                     break
                 round_idx += 1
+
             final_candidates = sorted(final_candidates, key=lambda x: x['score'], reverse=True)
 
-            # Flatten candidate dictionaries so they match the SVD logic:
             flat_final_candidates = []
             for candidate in final_candidates:
                 row = candidate['row']
@@ -607,57 +667,67 @@ if st.button("Generate Recommendations"):
                 }
                 flat_final_candidates.append(flat_candidate)
 
+            recommendations = flat_final_candidates  # alias for later use
+
             st.subheader("Top Place Recommendations (Autoencoder-Based)")
-            if flat_final_candidates:
+            if recommendations:
                 st.markdown("### Best Recommendation")
-                display_recommendation(flat_final_candidates[0])
+                display_recommendation(recommendations[0])
                 st.markdown("### Other Recommendations")
-                for rec in flat_final_candidates[1:]:
+                for rec in recommendations[1:]:
                     display_recommendation(rec)
             else:
                 st.error("No balanced recommendations found.")
 
-            st.subheader("Map View: Recommended Places & Optimized Route")
-            # Wrap flat dictionaries in a 'row' key for mapping (as expected by show_map)
-            recs_for_map = [{'row': rec} for rec in flat_final_candidates]
-            show_map(recs_for_map, ors_key)
+            optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
 
     elif method == "SVD-Based":
         st.subheader("SVD-Based Recommendations")
         svd_rec = SVDPlaceRecommender()
         svd_rec.evaluate_model(places)
         svd_rec.fit(places)
-        recommendations = svd_rec.get_recommendations(places, user_lat, user_lng, predicted_ratings_dict, top_n=10, max_distance=5)
+        
+        recommendations = svd_rec.get_recommendations(
+            df=places,
+            user_lat=user_lat,
+            user_lon=user_lng,
+            predicted_ratings=predicted_ratings_dict,
+            top_n=10,
+            max_distance=5
+        )
 
         st.subheader("Top Place Recommendations (SVD-Based)")
         if recommendations:
-            # Display the best recommendation prominently
-            best = recommendations[0]
             st.markdown("### Best Recommendation")
-            display_recommendation(best)
+            display_recommendation(recommendations[0])
             st.markdown("### Other Recommendations")
             for rec in recommendations[1:]:
                 display_recommendation(rec)
         else:
             st.error("No recommendations found with SVD-based method.")
 
-        st.subheader("Map View: Recommended Places & Optimized Route")
-        # For SVD recommendations, adjust the data structure for mapping if needed
-        recs_for_map = [{'row': rec} for rec in recommendations]
-        show_map(recs_for_map, ors_key)
+        optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
 
     elif method == "Transfer-Based":
         st.subheader("Transfer-Based Recommendations")
         recommender = TransferBasedRecommender()
-        recommendations = recommender.get_recommendations(user_lat, user_lng, user_preferences_dict, num_recs)
+        recommendations = recommender.get_recommendations(
+            user_lat=user_lat,
+            user_lon=user_lng,
+            user_prefs=user_preferences_dict,
+            num_recs=num_recs
+        )
+
         if recommendations:
-            for rec in recommendations:
+            st.markdown("### Best Recommendation")
+            display_recommendation(recommendations[0])
+            st.markdown("### Other Recommendations")
+            for rec in recommendations[1:]:
                 display_recommendation(rec)
         else:
             st.error("No recommendations found with Transfer-Based method.")
 
-        st.subheader("Map View: Recommended Places & Optimized Route")
-        show_map(recommendations, ors_key)
+        optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
     
     elif method == "Ensemble":
         # Import the EnsembleRecommender
@@ -682,45 +752,39 @@ if st.button("Generate Recommendations"):
             SVDPlaceRecommender
         )
         progress_bar.progress(75)
-        
+
         # Get ensemble recommendations
         st.write("Generating ensemble recommendations...")
         recommendations = ensemble.get_recommendations(
-            user_lat, user_lng, 
-            user_preferences_dict, 
-            predicted_ratings_dict, 
+            user_lat, user_lng,
+            user_preferences_dict,
+            predicted_ratings_dict,
             num_recs=num_recs
         )
         progress_bar.progress(100)
-        
+
         # Display recommendations
         st.subheader("Ensemble Recommendations")
         if recommendations:
-            # Display the best recommendation prominently
-            best = recommendations[0]
             st.markdown("### Best Recommendation")
+            best = recommendations[0]
             display_recommendation(best)
-            
-            # Add a note showing which models contributed to this recommendation
+
             if 'sources' in best:
                 sources_str = ", ".join([s.capitalize() for s in best['sources']])
                 st.info(f"This recommendation was suggested by: {sources_str}")
-                
-                # Display explanation if available
                 if 'explanation' in best:
                     st.markdown(f"*{best['explanation']}*")
-            
-            # Display other recommendations
+
             st.markdown("### Other Recommendations")
             for rec in recommendations[1:]:
                 display_recommendation(rec)
                 if 'sources' in rec:
                     sources_str = ", ".join([s.capitalize() for s in rec['sources']])
-                    # Calculate confidence based on how many models agreed on this recommendation
-                    confidence = len(rec['sources']) / 3.0  # 3 models total
+                    confidence = len(rec['sources']) / 3.0
                     confidence_text = "High" if confidence > 0.66 else "Medium" if confidence > 0.33 else "Low"
                     confidence_color = "green" if confidence > 0.66 else "orange" if confidence > 0.33 else "red"
-                    
+
                     st.markdown(f"""
                     <div style="display: flex; align-items: center; margin-bottom: 10px;">
                         <div>Suggested by: {sources_str}</div>
@@ -729,17 +793,13 @@ if st.button("Generate Recommendations"):
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-                    
-                    # Display explanation if available
+
                     if 'explanation' in rec:
                         st.markdown(f"*{rec['explanation']}*")
         else:
             st.error("No recommendations found with Ensemble method.")
-        
-        # Show map view
-        st.subheader("Map View: Recommended Places & Optimized Route")
-        recs_for_map = recommendations
-        show_map(recs_for_map, ors_key)
+
+        optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
 
 #     # Now, call the autoencoder recommender with the provided_mask
 #     recommender = AutoencoderRecommender()
