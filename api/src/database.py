@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 # Load environment variables
-load_dotenv()
+# load_dotenv()
 
+print("ENV: ", os.environ.get("ENV"))
 if os.environ.get("ENV") == "test":
     DATABASE_URL = "sqlite:///:memory:"
     engine = create_engine(DATABASE_URL)
