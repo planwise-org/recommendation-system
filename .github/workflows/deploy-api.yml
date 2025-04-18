@@ -43,7 +43,7 @@ jobs:
       - name: Pull Vercel Environment Information
         run: |
             cd api
-            vercel link --project=prj_fJ8xEI7nyi7X8Q6ljTsalB3JXUXI --token=${{ secrets.VERCEL_TOKEN }}
+            vercel link --yes --project=${{ secrets.PROJECT_ID }} --token=${{ secrets.VERCEL_TOKEN }}
             # vercel env add ENV=prod --token=${{ secrets.VERCEL_TOKEN }}
             # vercel env add SUPABASE_URL=${{ secrets.SUPABASE_URL }} --token=${{ secrets.VERCEL_TOKEN }}
             # vercel env add SUPABASE_KEY=${{ secrets.SUPABASE_KEY }} --token=${{ secrets.VERCEL_TOKEN }}
