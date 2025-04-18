@@ -46,11 +46,13 @@ elif os.environ.get("ENV") == "prod":
     url: str = os.environ.get("SUPABASE_URL")
     key: str = os.environ.get("SUPABASE_KEY")
     supabase: Client = create_client(url, key)
+    logger.debug("Connected to Supabase client")
 
 # Get database URL from environment variable or use default
 # DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/planwise_db") # hardcoded
 
-logger.debug(f"Connecting to database at: {DATABASE_URL}")
+if os.environ.get("ENV") in ["test", "local"]:
+    logger.debug(f"Connecting to database at: {DATABASE_URL}")
 
 
 # Create Base class for models
