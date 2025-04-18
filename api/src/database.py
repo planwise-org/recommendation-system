@@ -33,7 +33,13 @@ elif os.environ.get("ENV") == "local":
     DBNAME = os.environ.get("DBNAME")
     DBPORT = os.environ.get("DBPORT")
     DATABASE_URL = f"postgresql://{DBUSER}:{DBPASS}@{DBHOST}:{DBPORT}/{DBNAME}"
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+            DATABASE_URL,
+            echo=True,
+            pool_pre_ping=True,
+            pool_timeout=30,
+            pool_recycle=1800
+        )
 
 
 elif os.environ.get("ENV") == "prod":
@@ -46,14 +52,6 @@ elif os.environ.get("ENV") == "prod":
 
 logger.debug(f"Connecting to database at: {DATABASE_URL}")
 
-# Create SQLModel engine with a timeout
-engine = create_engine(
-    DATABASE_URL,
-    echo=True,
-    pool_pre_ping=True,
-    pool_timeout=30,
-    pool_recycle=1800
-)
 
 # Create Base class for models
 Base = SQLModel
