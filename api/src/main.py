@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import users, places, reviews, recommendations
-from .database import engine, Base, init_db
+from .database import init_db
 import logging
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
@@ -23,6 +23,7 @@ async def startup_event():
     try:
         # Test database connection first
         if os.environ.get("ENV") == "local":
+            from .database import engine
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
                 logger.debug("Database connection test successful")

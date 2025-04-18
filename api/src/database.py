@@ -41,7 +41,6 @@ elif os.environ.get("ENV") == "local":
             pool_recycle=1800
         )
 
-
 elif os.environ.get("ENV") == "prod":
     url: str = os.environ.get("SUPABASE_URL")
     key: str = os.environ.get("SUPABASE_KEY")
