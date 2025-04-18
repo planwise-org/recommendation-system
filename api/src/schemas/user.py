@@ -4,7 +4,7 @@ from ..models import UserRole
 
 class UserBase(BaseModel):
     email: EmailStr
-    full_name: str
+    name: str
     role: UserRole = UserRole.USER
 
 class UserCreate(UserBase):
@@ -14,10 +14,10 @@ class UserRead(UserBase):
     id: int
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
-    full_name: Optional[str] = None
+    name: Optional[str] = None
     password: Optional[str] = None
     role: Optional[UserRole] = None 

@@ -10,12 +10,6 @@ from supabase import create_client, Client
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-
-# when on production, use the supabase client
-# when on local, use the local database connection created on the docker-compose file
-# when on test, use in-memory SQLite database
-
-
 # Load environment variables
 load_dotenv()
 
@@ -24,60 +18,38 @@ print("ENV: ", os.environ.get("ENV"))
 if os.environ.get("ENV") == "test":
     DATABASE_URL = "sqlite:///:memory:"
     engine = create_engine(DATABASE_URL)
+    supabase = None
 
-elif os.environ.get("ENV") == "local":
-    # Creates a connection to the database according to the env variables
-    DBUSER = os.environ.get("DBUSER")
-    DBPASS = os.environ.get("DBPASS")
-    DBHOST = os.environ.get("DBHOST")
-    DBNAME = os.environ.get("DBNAME")
-    DBPORT = os.environ.get("DBPORT")
-    DATABASE_URL = f"postgresql://{DBUSER}:{DBPASS}@{DBHOST}:{DBPORT}/{DBNAME}"
-    engine = create_engine(
-            DATABASE_URL,
-            echo=True,
-            pool_pre_ping=True,
-            pool_timeout=30,
-            pool_recycle=1800
-        )
-
-
-elif os.environ.get("ENV") == "prod":
+else:  # Both local and prod use Supabase now
     url: str = os.environ.get("SUPABASE_URL")
-    key: str = os.environ.get("SUPABASE_KEY")
+    key: str = os.environ.get("SUPABASE_SERVICE_KEY")  # Use service key for both environments
     supabase: Client = create_client(url, key)
     logger.debug("Connected to Supabase client")
-
-# Get database URL from environment variable or use default
-# DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/planwise_db") # hardcoded
-
-if os.environ.get("ENV") in ["test", "local"]:
-    logger.debug(f"Connecting to database at: {DATABASE_URL}")
-
+    engine = None  # We don't need SQLAlchemy engine for Supabase
 
 # Create Base class for models
 Base = SQLModel
 
-def get_session() -> Generator[Session, None, None]:
+def get_session() -> Generator[Session | Client, None, None]:
     """
     Get a database session.
+    For test environment: returns SQLAlchemy session
+    For local and prod: returns Supabase client
     """
     logger.debug("Creating new database session")
-    if os.environ.get("ENV") in ["test", "local"]:
+    if os.environ.get("ENV") == "test":
         with Session(engine) as session:
             yield session
-    elif os.environ.get("ENV") == "prod":
+    else:  # Both local and prod use Supabase
         yield supabase
-    else:
-        raise ValueError("Invalid environment")
-
 
 def init_db():
     """
     Initialize the database by creating all tables if they don't exist.
+    Only needed for test environment now.
     """
     logger.debug("Initializing database tables")
-    if os.environ.get("ENV") in ["test", "local"]:
+    if os.environ.get("ENV") == "test":
         try:
             SQLModel.metadata.create_all(engine)
             logger.debug("Database tables initialized successfully")
@@ -88,24 +60,28 @@ def init_db():
 def drop_all_tables():
     """
     Drop all tables in the database.
+    Only needed for test environment now.
     """
     logger.debug("Dropping all tables")
-    try:
-        SQLModel.metadata.drop_all(engine)
-        logger.debug("All tables dropped successfully")
-    except SQLAlchemyError as e:
-        logger.error(f"Error dropping tables: {str(e)}")
-        raise
+    if os.environ.get("ENV") == "test":
+        try:
+            SQLModel.metadata.drop_all(engine)
+            logger.debug("All tables dropped successfully")
+        except SQLAlchemyError as e:
+            logger.error(f"Error dropping tables: {str(e)}")
+            raise
 
 def recreate_tables():
     """
     Drop all tables and recreate them.
+    Only needed for test environment now.
     """
     logger.debug("Starting table recreation")
-    try:
-        drop_all_tables()
-        init_db()
-        logger.debug("Table recreation completed")
-    except SQLAlchemyError as e:
-        logger.error(f"Error during table recreation: {str(e)}")
-        raise
+    if os.environ.get("ENV") == "test":
+        try:
+            drop_all_tables()
+            init_db()
+            logger.debug("Table recreation completed")
+        except SQLAlchemyError as e:
+            logger.error(f"Error during table recreation: {str(e)}")
+            raise
