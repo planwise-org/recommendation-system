@@ -5,6 +5,7 @@ from .database import engine, Base, init_db
 import logging
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -21,10 +22,11 @@ async def startup_event():
     logger.debug("Starting up the application")
     try:
         # Test database connection first
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-            logger.debug("Database connection test successful")
-        
+        if os.environ.get("ENV") == "local":
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                logger.debug("Database connection test successful")
+
         # Initialize tables if they don't exist
         init_db()
         logger.debug("Database initialization completed")
