@@ -1,4 +1,7 @@
-name: Deploy FastAPI App
+# This workflow is used to test the API routes and ensure they are working as expected
+# Deployment will occur only if all tests pass, as configured by the host provider
+
+name: Test FastAPI App
 
 on:
   workflow_dispatch:

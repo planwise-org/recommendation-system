@@ -22,11 +22,10 @@ async def startup_event():
     logger.debug("Starting up the application")
     try:
         # Test database connection first
-        if os.environ.get("ENV") == "local":
-            from .database import engine
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-                logger.debug("Database connection test successful")
+        from .database import engine
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            logger.info("Database connection test successful")
 
         # Initialize tables if they don't exist
         init_db()

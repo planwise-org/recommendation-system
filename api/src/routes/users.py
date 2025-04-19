@@ -45,8 +45,10 @@ def get_users(
     limit: int = 100,
     db: Session = Depends(get_session)
 ):
-    users = db.exec(select(User).offset(skip).limit(limit)).all()
+
+    users = db.query(User).offset(skip).limit(limit).all()
     return users
+
 
 @router.get("/{user_id}", response_model=UserRead)
 def get_user(user_id: int, db: Session = Depends(get_session)):
