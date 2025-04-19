@@ -7,25 +7,5 @@ services:
       - "8080:8080"
     environment:
       - ENV=local
-      - SECRET_KEY=d1d07f9052efd8b21e979a8c8e6db002ea46ce463d0651f0aa29d04b2558bcea
-      - DBUSER=user
-      - DBPASS=password
-      - DBHOST=db
-      - DBPORT=5432
-      - DBNAME=planwise
-    depends_on:
-      - db
-
-  db:
-    image: postgres:15
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=planwise
-    ports:
-      - "5431:5432"
-
-volumes:
-  postgres_data:
+      - SECRET_KEY=your-secret-key
+      - DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:54322/postgres
