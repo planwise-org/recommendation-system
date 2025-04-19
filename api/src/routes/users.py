@@ -26,18 +26,18 @@ def create_user(user: UserCreate, db: Session = Depends(get_session)):
         full_name=user.full_name,
         role=user.role
     )
-    try:
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        return db_user
-    except Exception as e:
-        db.rollback()
-        print(f"Error creating user: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not create user"
-        )
+    # try:
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+    # except Exception as e:
+    #     db.rollback()
+    #     print(f"Error creating user: {str(e)}")
+    #     raise HTTPException(
+    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #         detail="Could not create user"
+    #     )
 
 @router.get("/", response_model=List[UserRead])
 def get_users(

@@ -16,7 +16,7 @@ load_dotenv()
 print("ENV: ", os.environ.get("ENV"))
 
 if os.environ.get("ENV") == "test":
-    DATABASE_URL = "sqlite:///:memory:"
+    DATABASE_URL = "sqlite:///./test.db"
     engine = create_engine(DATABASE_URL)
 
 elif os.environ.get("ENV") == "local":
@@ -58,7 +58,7 @@ def init_db():
     if os.environ.get("ENV") in ["test", "local", "prod"]:
         try:
             SQLModel.metadata.create_all(engine)
-            logger.debug("Database tables initialized successfully")
+            logger.info("Database tables initialized successfully")
         except SQLAlchemyError as e:
             logger.error(f"Error initializing database: {str(e)}")
             raise

@@ -1,9 +1,8 @@
 from fastapi.testclient import TestClient
 from src.main import app
 import pytest
-from src.models import UserRole, User, SQLModel
-from src.database import init_db, Base, engine
-from sqlmodel import Session
+from src.models import UserRole
+from src.database import init_db, engine, get_session
 
 client = TestClient(app)
 
@@ -27,6 +26,15 @@ def created_user():
     response = client.post("/api/users/", json=test_user_data)
     assert response.status_code == 201
     return response.json()
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_db():
+    init_db()  # Create all tables in in-memory SQLite
+
+    yield
+    app.dependency_overrides.clear()
+
+
 
 # CREATE USER TESTS
 def test_create_user_success():
