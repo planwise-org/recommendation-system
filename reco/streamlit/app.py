@@ -14,10 +14,13 @@ import textblob
 import spacy
 import json
 from datetime import datetime
+import os
 
 # For SVD-based recommendations:
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
+from pathway import get_optimal_path
+from pathway import reorder_with_tsp
 
 # Initialize session state for user authentication
 if 'user_token' not in st.session_state:
@@ -176,19 +179,24 @@ def euclidean_distance(p1, p2):
     """Euclidean distance between two points (lat,lon)."""
     return math.hypot(p1[0]-p2[0], p1[1]-p2[1])
 
-def show_map(recs, ors_key):
+def show_map(recs, ors_key, profile="foot-walking"):
     """Display an interactive PyDeck map with an optimized route and text labels."""
     if not recs:
         return
+
+    import openrouteservice
+    from openrouteservice import exceptions
+
     if 'row' in recs[0]:
         names = [cand['row']['name'] for cand in recs]
-        lats  = [cand['row']['lat'] for cand in recs]
-        lons  = [cand['row']['lng'] for cand in recs]
+        lats = [cand['row']['lat'] for cand in recs]
+        lons = [cand['row']['lng'] for cand in recs]
     else:
         names = [cand['name'] for cand in recs]
-        lats  = [cand['lat'] for cand in recs]
-        lons  = [cand['lng'] for cand in recs]
+        lats = [cand['lat'] for cand in recs]
+        lons = [cand['lng'] for cand in recs]
 
+    coords = list(zip(lons, lats))  # (lng, lat)
     map_df = pd.DataFrame({
         'name': names,
         'lat': lats,
@@ -200,7 +208,7 @@ def show_map(recs, ors_key):
             try:
                 client = openrouteservice.Client(key=ors_key)
                 coords = map_df[['lon', 'lat']].values.tolist()
-                route_geojson = client.directions(coords, profile='driving-car', format='geojson')
+                route_geojson = client.directions(coords, profile=profile, format='geojson')
                 route_coords = route_geojson['features'][0]['geometry']['coordinates']
             except Exception as e:
                 st.error(f"Routing API error: {e}")
@@ -264,107 +272,78 @@ def display_recommendation(rec):
                 st.write(f"**Description:** {rec.get('description', 'No description available.')}")
                 st.write(f"**Coordinates:** (Lat: {rec.get('lat', 'N/A')}, Lon: {rec.get('lng', 'N/A')})")
 
-def add_review_section(recommendations):
-    st.subheader("Add Reviews")
-    
-    # Store review states in session state
-    if 'review_states' not in st.session_state:
-        st.session_state.review_states = {}
-    
-    for idx, rec in enumerate(recommendations):
-        # Handle different recommendation formats
-        if isinstance(rec, dict):
-            place_id = rec.get('place_id', str(idx))
-            place_name = rec.get('name', 'Place')
+def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile):
+    recs_for_map = [{'row': rec} for rec in recommendations] if 'row' not in recommendations[0] else recommendations
+
+    # Always apply RL optimization
+    st.subheader("Optimized Route Based on Preferences + Distance")
+    valid_recs = [
+        p if 'row' not in p else p['row'] for p in recs_for_map
+        if (p.get("lat") if 'row' not in p else p['row'].get("lat")) is not None and
+           (p.get("lng") if 'row' not in p else p['row'].get("lng")) is not None
+    ]
+    try:
+        rl_path = get_optimal_path(valid_recs, user_lat, user_lng)
+        if rl_path:
+            # Reorder RL output using TSP (Haversine)
+            rl_path = reorder_with_tsp(rl_path)
+            recs_for_map = [{'row': rec} for rec in rl_path]
+            st.success("RL + TSP Reordering Applied Successfully!")
+    except Exception as e:
+        st.warning(f"RL optimization failed: {e}")
+
+    st.subheader("Map View: Recommended Places & Optimized Route")
+    st.markdown(f"**Routing Mode:** `{profile.replace('-', ' ').capitalize()}`")
+    show_map(recs_for_map, ors_key, profile=profile)
+
+    # Route Breakdown
+    st.subheader("Route Details")
+    total_distance = 0
+    for i in range(len(recs_for_map)):
+        current = recs_for_map[i]['row'] if 'row' in recs_for_map[i] else recs_for_map[i]
+        st.markdown(f"**{i+1}. {current['name']}** *(Category: {current.get('category', 'N/A')})*")
+
+        if i == 0:
+            dist = haversine(user_lat, user_lng, current['lat'], current['lng']) / 1000
+            total_distance += dist
+            st.write(f"\u21b3 Distance from start location: `{dist:.2f} km`")
         else:
-            place_id = str(idx)
-            place_name = getattr(rec, 'name', f'Place {idx}')
-        
-        # Create unique key for this recommendation
-        review_key = f"{place_id}_{idx}"
-        
-        # Check if we have a saved review for this place
-        if place_id in st.session_state.saved_reviews:
-            st.session_state.review_states[review_key] = st.session_state.saved_reviews[place_id].copy()
-        elif review_key not in st.session_state.review_states:
-            st.session_state.review_states[review_key] = {
-                'rating': 3.0,
-                'comment': '',
-                'submitted': False,
-                'previous_submission': False
-            }
-        
-        state = st.session_state.review_states[review_key]
-        
-        with st.expander(f"Review {place_name}"):
-            if not state['submitted']:
-                # Rating slider
-                rating = st.slider(
-                    "Rating",
-                    min_value=1.0,
-                    max_value=5.0,
-                    value=state['rating'],
-                    step=0.5,
-                    key=f"rating_{review_key}"
-                )
-                
-                # Comment text area
-                comment = st.text_area(
-                    "Comment",
-                    value=state['comment'],
-                    key=f"comment_{review_key}"
-                )
-                
-                # Update state with current values
-                state['rating'] = rating
-                state['comment'] = comment
-                
-                submit_label = "Update Review" if state.get('previous_submission') else "Submit Review"
-                if st.button(submit_label, key=f"submit_{review_key}"):
-                    try:
-                        response = requests.post(
-                            "http://localhost:8000/reviews/",
-                            json={
-                                "place_id": place_id,
-                                "rating": rating,
-                                "comment": comment
-                            },
-                            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
-                        )
-                        if response.status_code == 200:
-                            # Update both states after successful submission
-                            state['submitted'] = True
-                            state['previous_submission'] = True
-                            st.session_state.saved_reviews[place_id] = {
-                                'rating': rating,
-                                'comment': comment,
-                                'submitted': True,
-                                'previous_submission': True
-                            }
-                            st.success(f"Review {'updated' if state.get('previous_submission') else 'submitted'} successfully!")
-                            st.rerun()
-                        else:
-                            st.error("Failed to submit review.")
-                    except Exception as e:
-                        st.error(f"Error submitting review: {str(e)}")
-            else:
-                # Display the submitted review
-                st.write(f"Your rating: {state['rating']:.1f} ⭐")
-                if state['comment']:
-                    st.write(f"Your comment: {state['comment']}")
-                
-                if st.button("Edit Review", key=f"edit_{review_key}"):
-                    state['submitted'] = False
-                    st.rerun()
+            prev = recs_for_map[i - 1]['row'] if 'row' in recs_for_map[i - 1] else recs_for_map[i - 1]
+            dist = haversine(prev['lat'], prev['lng'], current['lat'], current['lng']) / 1000
+            total_distance += dist
+            st.write(f"\u21b3 Distance from previous: `{dist:.2f} km`")
+    st.markdown(f"**Total Travel Distance:** `{total_distance:.2f} km`")
 
 # ---------------------------
-# Constants and Mappings
+# Load Resources
+# ---------------------------
+# Update load_resources to include type processing
+
+BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
+
+@st.cache(allow_output_mutation=True)
+def load_resources():
+    if os.environ.get('ENV') == 'prod':
+        auto_model = load_model(os.path.join(BASE_PATH, "models/autoencoder.h5"))
+        scaler = joblib.load(os.path.join(BASE_PATH, "models/scaler.save"))
+        places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
+    else:
+        auto_model = load_model("models/autoencoder.h5")
+        scaler = joblib.load("models/scaler.save")
+        places = pd.read_csv("resources/combined_places.csv")
+    places['types_processed'] = places['types'].apply(process_types)  # Add this line
+    return auto_model, scaler, places
+
+auto_model, scaler, places = load_resources()
+
+# ---------------------------
+# Categories
 # ---------------------------
 categories = [
-    "resorts", "burger/pizza shops", "hotels/other lodgings", "juice bars", "beauty & spas", 
-    "gardens", "amusement parks", "farmer market", "market", "music halls", "nature", 
-    "tourist attractions", "beaches", "parks", "theatres", "museums", "malls", "restaurants", 
-    "pubs/bars", "local services", "art galleries", "dance clubs", "swimming pools", "bakeries", 
+    "resorts", "burger/pizza shops", "hotels/other lodgings", "juice bars", "beauty & spas",
+    "gardens", "amusement parks", "farmer market", "market", "music halls", "nature",
+    "tourist attractions", "beaches", "parks", "theatres", "museums", "malls", "restaurants",
+    "pubs/bars", "local services", "art galleries", "dance clubs", "swimming pools", "bakeries",
     "cafes", "view points", "monuments", "zoo", "supermarket"
 ]
 
@@ -400,18 +379,84 @@ category_to_place_types = {
     "supermarket": ["supermarket", "grocery_or_supermarket"]
 }
 
-# ---------------------------
-# Load Resources (Autoencoder Model, Scaler, Places Data)
-# ---------------------------
-@st.cache(allow_output_mutation=True)
-def load_resources():
-    auto_model = load_model("models/autoencoder.h5")
-    scaler = joblib.load("models/scaler.save")
-    places = pd.read_csv("resources/combined_places.csv")
-    places['types_processed'] = places['types'].apply(process_types)
-    return auto_model, scaler, places
 
-auto_model, scaler, places = load_resources()
+class BaseRecommender:
+    def get_recommendations(self, user_lat, user_lon, user_prefs, num_recs):
+        raise NotImplementedError("Subclasses must implement this method.")
+
+# ---------------------------
+# Autoencoder-Based Recommendation
+# ---------------------------
+class AutoencoderRecommender(BaseRecommender):
+    def get_recommendations(self, user_lat, user_lon, user_prefs, provided_mask, num_recs):
+        # Reconstruct predicted ratings
+        input_scaled = scaler.transform([user_prefs])
+        predicted_scaled = auto_model.predict(input_scaled)
+        predicted = scaler.inverse_transform(np.clip(predicted_scaled, 0, 1))[0]
+        final_predictions = np.where(provided_mask, user_prefs, predicted)
+
+        # Candidate scoring logic
+        candidates = []
+        for _, row in places.iterrows():
+            dist = haversine(user_lat, user_lon, row['lat'], row['lng'])
+            if dist > 2000:
+                continue
+
+            best_cat = None
+            best_score = 0
+            for i, cat in enumerate(categories):
+                mapped_types = category_to_place_types.get(cat, [])
+                if any(pt in row['types_processed'] for pt in mapped_types):
+                    cat_score = final_predictions[i] / 5.0
+                    if cat_score > best_score:
+                        best_score = cat_score
+                        best_cat = cat
+
+            if best_cat:
+                norm_rating = (row['rating'] / 5.0) if pd.notna(row['rating']) else 0
+                norm_reviews = (np.log(row['user_ratings_total'] + 1)) / np.log(places['user_ratings_total'].max() + 1) if pd.notna(row['user_ratings_total']) else 0
+                score = (0.1 * (1 - dist/2000) +
+                        0.2 * norm_rating +
+                        0.2 * norm_reviews +
+                        0.5 * best_score)
+
+                candidates.append({
+                    'row': row,
+                    'score': score,
+                    'category': best_cat,
+                    'distance': dist
+                })
+
+        # Category balancing logic
+        candidates.sort(key=lambda x: x['score'], reverse=True)
+        category_groups = {}
+        for candidate in candidates:
+            category_groups.setdefault(candidate['category'], []).append(candidate)
+
+        final_recs = []
+        round_idx = 0
+        while len(final_recs) < num_recs:
+            added = False
+            for cat in category_groups.values():
+                if len(cat) > round_idx:
+                    final_recs.append(cat[round_idx])
+                    added = True
+                    if len(final_recs) >= num_recs:
+                        break
+            if not added:
+                break
+            round_idx += 1
+
+        return [{
+            'name': r['row']['name'],
+            'lat': r['row']['lat'],
+            'lng': r['row']['lng'],
+            'score': r['score'],
+            'category': r['category'],
+            'rating': r['row']['rating'],
+            'reviews': r['row']['user_ratings_total']
+        } for r in final_recs[:num_recs]]
+
 
 # ---------------------------
 # SVDPlaceRecommender: SVD-Based Collaborative Filtering
@@ -506,20 +551,33 @@ class SVDPlaceRecommender:
                 'lat': row['lat'],
                 'lng': row['lng']
             })
+
         return sorted(predictions, key=lambda x: x['score'], reverse=True)[:top_n]
+
 
 # ---------------------------
 # Transfer-Based Recommendation Wrapper
 # ---------------------------
 from src.transfer_recommender import TransferRecommender
+
 class TransferBasedRecommender:
     def __init__(self):
         self.tr = TransferRecommender()
-        self.tr.train_base_model(save_path="models")
-        self.places = pd.read_csv("resources/combined_places.csv")
+
+
+        if os.environ.get('ENV') == 'prod':
+            self.tr.train_base_model(save_path= BASE_PATH + "models")
+            self.places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
+            self.tr.transfer_to_places(self.places, save_path= BASE_PATH+"models")
+
+        else:
+            self.tr.train_base_model(save_path="models")
+            self.places = pd.read_csv("resources/combined_places.csv")
+            self.tr.transfer_to_places(self.places, save_path="models")
+
         self.places['types_processed'] = self.places['types'].apply(process_types)
-        self.tr.transfer_to_places(self.places, save_path="models")
-    
+
+
     def get_recommendations(self, user_lat, user_lon, user_prefs, num_recs):
         return self.tr.get_recommendations(
             user_preferences=user_prefs,
@@ -536,7 +594,32 @@ st.sidebar.header("User Settings")
 user_lat = st.sidebar.number_input("Latitude", value=40.4168, format="%.4f")
 user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
 ors_key = st.sidebar.text_input("OpenRouteService API Key (optional)", value="", type="password")
-method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based"])
+method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Ensemble"])
+profile = st.sidebar.selectbox(
+    "Routing Profile",
+    options=["foot-walking", "driving-car"],
+    index=0,
+    help="Choose between walking or driving for route optimization."
+)
+
+# Add ensemble weights if ensemble method is selected
+if method == "Ensemble":
+    st.sidebar.subheader("Ensemble Weights")
+    auto_weight = st.sidebar.slider("Autoencoder Weight", 0.0, 1.0, 0.33, 0.01)
+    svd_weight = st.sidebar.slider("SVD Weight", 0.0, 1.0, 0.33, 0.01)
+    transfer_weight = st.sidebar.slider("Transfer Learning Weight", 0.0, 1.0, 0.34, 0.01)
+    # Normalize weights to ensure they sum to 1
+    total_weight = auto_weight + svd_weight + transfer_weight
+    if total_weight > 0:
+        auto_weight = auto_weight / total_weight
+        svd_weight = svd_weight / total_weight
+        transfer_weight = transfer_weight / total_weight
+    ensemble_weights = {
+        'autoencoder': auto_weight,
+        'svd': svd_weight,
+        'transfer': transfer_weight
+    }
+
 num_recs = 5
 
 st.title("Personalized Place Recommendations in Madrid")
@@ -650,9 +733,6 @@ def get_user_inputs():
 input_ratings, provided_mask = get_user_inputs()
 user_preferences_dict = {cat: float(st.session_state.get(f"slider_{cat}", 0.0)) for cat in categories}
 
-st.subheader("Your Preference Ratings")
-st.write(user_preferences_dict)
-
 # Modify the Generate Recommendations button section
 if st.button("Generate Recommendations"):
     # Store the current method
@@ -666,12 +746,15 @@ if st.button("Generate Recommendations"):
     final_predictions = predicted[0]
     final_predictions[provided_mask[0]] = input_ratings[0][provided_mask[0]]
     predicted_ratings_dict = {cat: final_predictions[i] for i, cat in enumerate(categories)}
-    
+
+
     with st.expander("Show Predicted Category Ratings"):
         for cat, rating in predicted_ratings_dict.items():
             st.write(f"**{cat}:** {rating:.2f}")
-    
+
+    # Depending on the method, call the corresponding recommender
     if method == "Autoencoder-Based":
+        st.subheader("Autoencoder-Based Recommendations")
         candidates = []
         for idx, row in places.iterrows():
             dist = haversine(user_lat, user_lng, row['lat'], row['lng'])
@@ -700,8 +783,8 @@ if st.button("Generate Recommendations"):
             st.session_state.current_recommendations = None
         else:
             max_reviews = max(
-                [cand['row'].get('user_ratings_total', 1) for cand in candidates 
-                 if pd.notna(cand['row'].get('user_ratings_total'))] or [1]
+                [cand['row'].get('user_ratings_total', 1) for cand in candidates
+                if pd.notna(cand['row'].get('user_ratings_total'))] or [1]
             )
             w_distance = 0.1
             w_rating = 0.2
@@ -738,6 +821,7 @@ if st.button("Generate Recommendations"):
                 if not added_this_round:
                     break
                 round_idx += 1
+
             final_candidates = sorted(final_candidates, key=lambda x: x['score'], reverse=True)
             
             flat_final_candidates = []
@@ -786,23 +870,14 @@ if st.session_state.current_recommendations:
     
     st.subheader(f"Top Place Recommendations ({method})")
     if recommendations:
-        if method == "Autoencoder-Based":
-            st.markdown("### Best Recommendation")
-            display_recommendation(recommendations[0])
-            st.markdown("### Other Recommendations")
-            for rec in recommendations[1:]:
-                display_recommendation(rec)
-        else:
-            for rec in recommendations:
-                display_recommendation(rec)
-        
-        # Add review section
-        add_review_section(recommendations)
+        st.markdown("### Best Recommendation")
+        display_recommendation(recommendations[0])
+        st.markdown("### Other Recommendations")
+        for rec in recommendations[1:]:
+            display_recommendation(rec)
         
         # Show map
         st.subheader("Map View: Recommended Places & Optimized Route")
-        if method == "Autoencoder-Based":
-            recs_for_map = [{'row': rec} for rec in recommendations]
-            show_map(recs_for_map, ors_key)
-        else:
-            show_map(recommendations, ors_key)
+        optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
+    else:
+        st.error(f"No recommendations found with {method} method.")

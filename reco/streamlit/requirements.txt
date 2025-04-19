@@ -9,7 +9,9 @@ surprise
 scikit-learn==1.6.1
 pandas==2.2.3
 numpy<2
-# # Libraries needed for preference extraction
+recommenders
+
+# Libraries needed for preference extraction
 spacy>=3.0.0
 textblob
 requests

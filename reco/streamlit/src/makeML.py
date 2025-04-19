@@ -144,14 +144,16 @@ plt.show()
 # ---------------------------
 # 6) Save the underlying base_model + scaler
 # ---------------------------
-BASE_PATH = "../models/"
+
+BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
 os.makedirs(BASE_PATH, exist_ok=True)  # Ensure the directory exists
 
+
 if os.environ.get('ENV') == 'prod':
-    base_model.save(os.path.join(BASE_PATH, "autoencoder.h5"))
-    joblib.dump(scaler, os.path.join(BASE_PATH, "scaler.save"))
+    base_model.save(os.path.join(BASE_PATH, "models/autoencoder.h5"))
+    joblib.dump(scaler, os.path.join(BASE_PATH + "models/scaler.save"))
 else:
-    base_model.save(os.path.join(BASE_PATH, "autoencoder.h5"))
-    joblib.dump(scaler, os.path.join(BASE_PATH, "scaler.save"))
+    base_model.save("models/autoencoder.h5")
+    joblib.dump(scaler, "models/scaler.save")
 
 print("Deeper Weighted Denoising Autoencoder and scaler saved in 'models' folder!")

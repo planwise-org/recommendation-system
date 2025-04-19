@@ -12,7 +12,10 @@ WORKDIR /
 COPY requirements.txt .
 
 # Install dependencies
-RUN pip install  -r requirements.txt
+RUN pip install -r requirements.txt
+
+# Download spaCy model
+RUN python -m spacy download en_core_web_sm
 
 # Copy the application code
 COPY . .
@@ -21,5 +24,4 @@ COPY . .
 EXPOSE 8080
 
 # Command to run FastAPI with Uvicorn
-WORKDIR /src
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]

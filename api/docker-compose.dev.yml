@@ -6,7 +6,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ENV=dev
+      - ENV=local
+      - SECRET_KEY=d1d07f9052efd8b21e979a8c8e6db002ea46ce463d0651f0aa29d04b2558bcea
       - DBUSER=user
       - DBPASS=password
       - DBHOST=db
@@ -17,14 +18,14 @@ services:
 
   db:
     image: postgres:15
-    # volumes:
-    #  - postgres_data/var/lib/postgresql/data/
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     environment:
-     - POSTGRES_USER=user
-     - POSTGRES_PASSWORD=password
-     - POSTGRES_DB=planwise
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=planwise
     ports:
       - "5431:5432"
 
-  # volumes:
-  #   postgres_data:
+volumes:
+  postgres_data:

@@ -1,30 +1,51 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session
-from models import User
-from services.auth import hash_password
-from schemas import UserCreate
-from database import get_db
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlmodel import Session, select
+from ..database import get_session
+from ..models import User
+from ..schemas.user import UserCreate, UserRead
+from ..services.auth import get_current_user, get_password_hash
+from typing import List
 
+router = APIRouter()
 
-users = APIRouter()
-
-
-@users.get("/")
-async def read_users():
-    return {"Hello": "Users"}
-
-
-@users.post("/register/")
-def register(user: UserCreate, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.email == user.email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    hashed_pw = hash_password(user.password)
-    new_user = User(email=user.email, hashed_password=hashed_pw)
-
-    db.add(new_user)
+@router.post("/", response_model=UserRead)
+def create_user(user: UserCreate, db: Session = Depends(get_session)):
+    # Check if username already exists
+    db_user = db.exec(select(User).where(User.username == user.username)).first()
+    if db_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered"
+        )
+    
+    # Create new user with hashed password
+    hashed_password = get_password_hash(user.password)
+    db_user = User(
+        username=user.username,
+        full_name=user.full_name,
+        hashed_password=hashed_password,
+        role=user.role
+    )
+    db.add(db_user)
     db.commit()
-    db.refresh(new_user)
+    db.refresh(db_user)
+    return db_user
 
-    return {"message": "User created"}
+@router.get("/me", response_model=UserRead)
+def read_user_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+@router.get("/{username}", response_model=UserRead)
+def read_user(username: str, db: Session = Depends(get_session)):
+    db_user = db.exec(select(User).where(User.username == username)).first()
+    if db_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return db_user
+
+@router.get("/{username}/exists")
+def check_user_exists(username: str, db: Session = Depends(get_session)):
+    db_user = db.exec(select(User).where(User.username == username)).first()
+    return {"exists": db_user is not None}
