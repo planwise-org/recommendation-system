@@ -5,16 +5,10 @@ import os
 from dotenv import load_dotenv
 import logging
 from sqlalchemy.exc import SQLAlchemyError
-from supabase import create_client, Client
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-
-# when on production, use the supabase client
-# when on local, use the local database connection created on the docker-compose file
-# when on test, use in-memory SQLite database
 
 
 # Load environment variables
@@ -38,10 +32,6 @@ elif os.environ.get("ENV") == "local":
 
 
 elif os.environ.get("ENV") == "prod":
-    # url: str = os.environ.get("SUPABASE_URL")
-    # key: str = os.environ.get("SUPABASE_KEY")
-    # supabase: Client = create_client(url, key)
-
     DATABASE_URL = os.environ.get("SUPABASE_URL")
     engine = create_engine(DATABASE_URL)
 

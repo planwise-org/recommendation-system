@@ -1,58 +1,121 @@
-# Planwise API
+# Planwise API 🚀
 
-## Instructions for running the API locally using Docker (highly recommended)
+[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.io/)
 
-1. Make sure you have docker installed on your machine
+## 📋 Table of Contents
 
-2. Cd into api directory: `cd api`
+- [Local Development with Docker](#-local-development-with-docker)
+- [Manual Setup](#-manual-setup)
+- [Environment Variables](#-environment-variables)
 
-3. Set up supabase locally
+## 🐳 Local Development with Docker
 
-- Install supabase
+### Prerequisites
 
-MacOS with homebrew: `brew install supabase/tap/supabase`
-Windows with scoop:
-```bash
-scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-scoop install supabase
-```
+- Docker installed on your machine
+- Supabase CLI
 
-- Initialize supabase: `supabase init`
-- Start supabase: `supabase start`
-- Copy the DB URL from supabase cli and paste it in the `DATABASE_URL` variable in the `docker-compose.dev.yml` file. **Remove 127.0.0.1 and replace with host.docker.internal**
+### Setup Steps
 
-4. Run the following command to build the docker container and the spin up a database instance
+1. **Navigate to API Directory**
 
-```bash
-docker compose -f docker-compose.dev.yml up -d --build
-```
+   ```bash
+   cd api
+   ```
 
-This will default the container to run on port 8080 and the database on port 5432. You can change these ports in the `docker-compose.dev.yml` file.
-The application will run on detached mode.
+2. **Set up Supabase Locally**
 
-5. To stop the container run the following command
+   Install Supabase CLI:
 
-```bash
-docker compose -f docker-compose.dev.yml down
-```
-
-## Instructions for running the API using fastapi dev
-
-1. Create a virtual environment
+   Full guide [here](https://supabase.com/docs/guides/local-development/cli/getting-started?queryGroups=access-method&access-method=postgres)
 
 ```bash
-cd api
-python3 -m venv venv
+   # MacOS
+   brew install supabase/tap/supabase
+
+   # Windows (with scoop)
+   scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+   scoop install supabase
 ```
 
-2.Install dependencies
+3. **Initialize and Start Supabase**
 
 ```bash
-pip install -r requirements.txt
+   supabase init
+   supabase start
 ```
 
-3. Run the API
+4. **Configure Database URL**
+   - Copy the DB URL from Supabase CLI output
+   - Paste it in the `DATABASE_URL` variable in `docker-compose.dev.yml`
+   - ⚠️ **Important**: Replace `127.0.0.1` with `host.docker.internal` for proper Docker networking
+
+5. **Build and Run Docker Container**
 
 ```bash
-fastapi dev main.py
+   docker compose -f docker-compose.dev.yml up -d --build
 ```
+
+   This will:
+   - Start the application on port 8080 (configurable)
+   - Start PostgreSQL on port 5432 (configurable)
+   - Run in detached mode
+
+6. **Stop the Container**
+   ```bash
+   docker compose -f docker-compose.dev.yml down
+   ```
+
+## 💻 Manual Setup
+
+### Prerequisites
+- Python 3.8+
+- pip
+
+### Setup Steps
+
+1. **Create Virtual Environment**
+   ```bash
+   cd api
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the API**
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+## 🔐 Environment Variables
+
+Create a `.env` file in the `api` directory with the following variables:
+
+```env
+ENV=local
+SECRET_KEY=<your_secret_key>
+DATABASE_URL=<your_database_url>
+SUPABASE_URL=<your_supabase_url>  # Only for production
+SUPABASE_KEY=<your_supabase_key>  # Only for production
+```
+
+## 📚 API Documentation
+
+Once the server is running, you can access:
+
+- Interactive API docs: `http://localhost:8080/docs`
+- Alternative API docs: `http://localhost:8080/redoc`
+
+## 🤝 Contributing
+
+Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting a Pull Request.
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
