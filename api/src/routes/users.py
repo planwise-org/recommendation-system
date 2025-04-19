@@ -14,6 +14,8 @@ router = APIRouter()
 def create_user(user: UserCreate, db: Session = Depends(get_session)):
     # Check if username already exists
     db_user = db.exec(select(User).where(User.username == user.username)).first()
+
+
     if db_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
