@@ -1,5 +1,4 @@
 from sqlmodel import SQLModel, create_engine, Session
-from sqlalchemy.orm import sessionmaker
 from typing import Generator
 import os
 from dotenv import load_dotenv
@@ -24,12 +23,7 @@ elif os.environ.get("ENV") == "local":
     # Creates a connection to the database according to the env variables
     logger.info("Connecting to local database at: ", os.environ.get("DATABASE_URL"))
     DATABASE_URL = os.environ.get("DATABASE_URL")
-
-    engine = create_engine(
-            DATABASE_URL,
-            echo=True,
-        )
-
+    engine = create_engine(DATABASE_URL,echo=True)
 
 elif os.environ.get("ENV") == "prod":
     DATABASE_URL = os.environ.get("SUPABASE_URL")

@@ -47,7 +47,7 @@ class User(SQLModel, table=True):
     role: UserRole = Field(default=UserRole.USER)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     # Relationships
     reviews: List["Review"] = Relationship(back_populates="user")
     recommendations: List["Recommendation"] = Relationship(back_populates="user")
@@ -66,7 +66,7 @@ class Place(SQLModel, table=True):
     rating: float = Field(default=0.0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     # Relationships
     reviews: List["Review"] = Relationship(back_populates="place")
     recommendations: List["Recommendation"] = Relationship(back_populates="place")
@@ -82,7 +82,7 @@ class Review(SQLModel, table=True):
     comment: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     # Relationships
     user: User = Relationship(back_populates="reviews")
     place: Place = Relationship(back_populates="reviews")
@@ -100,7 +100,7 @@ class Recommendation(SQLModel, table=True):
     reviewed: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     # Relationships
     user: User = Relationship(back_populates="recommendations")
     place: Place = Relationship(back_populates="recommendations")
