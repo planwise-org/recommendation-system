@@ -7,5 +7,5 @@ services:
       - "8080:8080"
     environment:
       - ENV=local
-      - SECRET_KEY=d1d07f9052efd8b21e979a8c8e6db002ea46ce463d0651f0aa29d04b2558bcea
+      - SECRET_KEY=your-secret-key
       - DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:54322/postgres

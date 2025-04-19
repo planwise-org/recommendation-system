@@ -9,13 +9,14 @@ from sqlalchemy import JSON, Enum as SQLAlchemyEnum
 """
 This file contains the models for the database tables.
 
-We have 6 tables:
+We have 7 tables:
     - User
     - Place
     - Plan
     - Route
     - Review
     - Category
+    - Preference
 """
 
 class UserRole(str, Enum):
@@ -41,7 +42,7 @@ class RecommendationAlgorithm(str, Enum):
 
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    email: str = Field(unique=True, index=True)
+    username: str = Field(unique=True, index=True)
     hashed_password: str
     full_name: str
     role: UserRole = Field(default=UserRole.USER)
@@ -51,6 +52,7 @@ class User(SQLModel, table=True):
     # Relationships
     reviews: List["Review"] = Relationship(back_populates="user")
     recommendations: List["Recommendation"] = Relationship(back_populates="user")
+    preferences: List["Preference"] = Relationship(back_populates="user")
 
     class Config:
         arbitrary_types_allowed = True
@@ -67,8 +69,8 @@ class Place(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
-    # Relationships
-    reviews: List["Review"] = Relationship(back_populates="place")
+    # Remove the reviews relationship since we're using Google Places IDs
+    # reviews: List["Review"] = Relationship(back_populates="place")
     recommendations: List["Recommendation"] = Relationship(back_populates="place")
 
     class Config:
@@ -77,7 +79,7 @@ class Place(SQLModel, table=True):
 class Review(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id")
-    place_id: int = Field(foreign_key="place.id")
+    place_id: str  # Google Places ID
     rating: float = Field(ge=1, le=5)
     comment: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -85,7 +87,6 @@ class Review(SQLModel, table=True):
     
     # Relationships
     user: User = Relationship(back_populates="reviews")
-    place: Place = Relationship(back_populates="reviews")
 
     class Config:
         arbitrary_types_allowed = True
@@ -104,6 +105,20 @@ class Recommendation(SQLModel, table=True):
     # Relationships
     user: User = Relationship(back_populates="recommendations")
     place: Place = Relationship(back_populates="recommendations")
+
+    class Config:
+        arbitrary_types_allowed = True
+
+class Preference(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id")
+    category: str = Field(index=True)
+    rating: float = Field(ge=0, le=5)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    user: User = Relationship(back_populates="preferences")
 
     class Config:
         arbitrary_types_allowed = True
