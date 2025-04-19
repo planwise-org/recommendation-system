@@ -8,12 +8,152 @@ import pydeck as pdk
 import networkx as nx
 import openrouteservice
 from openrouteservice import convert
+import re
+import requests  # For calling the API
+import textblob
+import spacy
+import json
+from datetime import datetime
 import os
+
 # For SVD-based recommendations:
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
 from pathway import get_optimal_path
 from pathway import reorder_with_tsp
+
+# Initialize session state for user authentication
+if 'user_token' not in st.session_state:
+    st.session_state.user_token = None
+if 'username' not in st.session_state:
+    st.session_state.username = None
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if 'saved_preferences' not in st.session_state:
+    st.session_state.saved_preferences = {}
+if 'saved_reviews' not in st.session_state:
+    st.session_state.saved_reviews = {}
+if 'current_recommendations' not in st.session_state:
+    st.session_state.current_recommendations = None
+if 'current_method' not in st.session_state:
+    st.session_state.current_method = None
+
+def login_user(username: str, password: str):
+    try:
+        # First check if user exists
+        check_user = requests.get(
+            f"http://localhost:8000/users/{username}/exists",
+            headers={"Content-Type": "application/json"}
+        )
+        if check_user.status_code == 404:
+            st.error("Username doesn't exist. Please sign up first.")
+            return False
+
+        # Try to login
+        response = requests.post(
+            "http://localhost:8000/token",
+            data={"username": username, "password": password}
+        )
+        if response.status_code == 200:
+            data = response.json()
+            st.session_state.user_token = data["access_token"]
+            st.session_state.username = username
+            return True
+        elif response.status_code == 401:
+            st.error("Incorrect password. Please try again.")
+            return False
+        else:
+            st.error("Login failed. Please try again.")
+            return False
+    except Exception as e:
+        st.error(f"Login failed: {str(e)}")
+        return False
+
+def register_user(username: str, email: str, password: str):
+    try:
+        response = requests.post(
+            "http://localhost:8000/users/",
+            json={"username": username, "email": email, "password": password}
+        )
+        if response.status_code == 200:
+            st.success("Registration successful! Please log in.")
+            return True
+        else:
+            st.error(f"Registration failed: {response.json()['detail']}")
+            return False
+    except Exception as e:
+        st.error(f"Registration failed: {str(e)}")
+        return False
+
+# Show login/signup if not authenticated
+if not st.session_state.user_token:
+    st.title("Welcome to Place Recommender")
+    tab1, tab2 = st.tabs(["Login", "Sign Up"])
+    
+    with tab1:
+        st.header("Login")
+        login_username = st.text_input("Username", key="login_username")
+        login_password = st.text_input("Password", type="password", key="login_password")
+        if st.button("Login"):
+            if login_user(login_username, login_password):
+                st.success("Logged in successfully!")
+                st.rerun()
+    
+    with tab2:
+        st.header("Sign Up")
+        reg_username = st.text_input("Username", key="reg_username")
+        reg_email = st.text_input("Email", key="reg_email")
+        reg_password = st.text_input("Password", type="password", key="reg_password")
+        if st.button("Register"):
+            if register_user(reg_username, reg_email, reg_password):
+                st.info("Please proceed to login.")
+    st.stop()
+
+# Add logout button in sidebar if logged in
+if st.sidebar.button("Logout"):
+    st.session_state.user_token = None
+    st.session_state.username = None
+    st.rerun()
+
+st.sidebar.write(f"Logged in as: {st.session_state.username}")
+
+# After login, load saved preferences and reviews
+if st.session_state.user_token:
+    try:
+        # Load preferences
+        pref_response = requests.get(
+            "http://localhost:8000/preferences/",
+            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+        )
+        if pref_response.status_code == 200:
+            st.session_state.saved_preferences = {
+                pref['category']: pref['rating'] 
+                for pref in pref_response.json()
+            }
+            # Set the sliders for saved preferences
+            for cat, rating in st.session_state.saved_preferences.items():
+                st.session_state[f"slider_{cat}"] = rating
+                st.session_state[f"chk_{cat}"] = True
+        
+        # Load reviews
+        review_response = requests.get(
+            "http://localhost:8000/reviews/",
+            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+        )
+        if review_response.status_code == 200:
+            reviews = review_response.json()
+            # Store reviews by place_id
+            st.session_state.saved_reviews = {
+                review['place_id']: {
+                    'rating': review['rating'],
+                    'comment': review['comment'],
+                    'submitted': True,
+                    'previous_submission': True
+                }
+                for review in reviews
+            }
+    except Exception as e:
+        st.error(f"Error loading user data: {str(e)}")
 
 # ---------------------------
 # Helper Functions
@@ -40,6 +180,7 @@ def euclidean_distance(p1, p2):
     return math.hypot(p1[0]-p2[0], p1[1]-p2[1])
 
 def show_map(recs, ors_key, profile="foot-walking"):
+    """Display an interactive PyDeck map with an optimized route and text labels."""
     if not recs:
         return
 
@@ -61,71 +202,61 @@ def show_map(recs, ors_key, profile="foot-walking"):
         'lat': lats,
         'lon': lons
     })
-
-    full_route_coords = []
-
-    if ors_key.strip():
-        try:
-            client = openrouteservice.Client(key=ors_key)
-
-            for i in range(len(coords) - 1):
-                segment = client.directions(
-                    [coords[i], coords[i + 1]],
-                    profile=profile,
-                    format='geojson'
-                )
-                path = segment['features'][0]['geometry']['coordinates']
-                if full_route_coords:
-                    full_route_coords.extend(path[1:])  # Avoid duplicate joints
-                else:
-                    full_route_coords.extend(path)
-        except exceptions.ApiError as e:
-            st.error(f"OpenRouteService API Error: {e}")
-            full_route_coords = coords
-        except Exception as e:
-            st.error(f"Unexpected routing error: {e}")
-            full_route_coords = coords
-    else:
-        st.warning("No ORS key provided. Route is shown as straight lines.")
-        full_route_coords = coords
-
-    text_layer = pdk.Layer(
-        "TextLayer",
-        data=map_df,
-        get_position='[lon, lat]',
-        get_text='name',
-        get_color='[255, 255, 255, 255]',
-        get_size=16,
-        anchor='middle'
-    )
-
-    path_layer = pdk.Layer(
-        "PathLayer",
-        data=[{"path": full_route_coords}],
-        get_path="path",
-        get_color="[0, 0, 255]",
-        width_scale=20,
-        width_min_pixels=3,
-    )
-
-    view_state = pdk.ViewState(
-        latitude=map_df['lat'].mean(),
-        longitude=map_df['lon'].mean(),
-        zoom=14,
-        pitch=0,
-    )
-
-    deck = pdk.Deck(
-        layers=[path_layer, text_layer],
-        initial_view_state=view_state,
-        tooltip={"text": "{name}"}
-    )
-
-    st.pydeck_chart(deck)
+    route_coords = None
+    if not map_df.empty:
+        if ors_key and ors_key != "":
+            try:
+                client = openrouteservice.Client(key=ors_key)
+                coords = map_df[['lon', 'lat']].values.tolist()
+                route_geojson = client.directions(coords, profile=profile, format='geojson')
+                route_coords = route_geojson['features'][0]['geometry']['coordinates']
+            except Exception as e:
+                st.error(f"Routing API error: {e}")
+                route_coords = None
+        if route_coords is None:
+            G = nx.complete_graph(len(map_df))
+            coords = map_df[['lat', 'lon']].values
+            for i, j in G.edges():
+                G[i][j]['weight'] = euclidean_distance((coords[i][0], coords[i][1]),
+                                                        (coords[j][0], coords[j][1]))
+            tsp_route = nx.approximation.traveling_salesman_problem(G, weight='weight')
+            optimized_data = map_df.iloc[tsp_route].reset_index(drop=True)
+            route_coords = optimized_data[['lon', 'lat']].values.tolist()
+        else:
+            optimized_data = map_df.copy()
+        
+        text_layer = pdk.Layer(
+            "TextLayer",
+            data=optimized_data,
+            get_position='[lon, lat]',
+            get_text='name',
+            get_color='[255, 255, 255, 255]',
+            get_size=16,
+            get_angle=0,
+            anchor='middle'
+        )
+        path_layer = pdk.Layer(
+            "PathLayer",
+            data=[{"path": route_coords}],
+            get_path="path",
+            get_color="[0, 0, 255]",
+            width_scale=20,
+            width_min_pixels=3,
+        )
+        view_state = pdk.ViewState(
+            latitude=optimized_data['lat'].mean(),
+            longitude=optimized_data['lon'].mean(),
+            zoom=14,
+            pitch=0,
+        )
+        deck = pdk.Deck(
+            layers=[path_layer, text_layer],
+            initial_view_state=view_state,
+            tooltip={"text": "{name}"}
+        )
+        st.pydeck_chart(deck)
 
 def display_recommendation(rec):
-
-    #st.write("DEBUG: Recommendation Data:", rec)
     with st.container():
         cols = st.columns([1, 3])
         with cols[0]:
@@ -182,6 +313,7 @@ def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, pro
             total_distance += dist
             st.write(f"\u21b3 Distance from previous: `{dist:.2f} km`")
     st.markdown(f"**Total Travel Distance:** `{total_distance:.2f} km`")
+
 # ---------------------------
 # Load Resources
 # ---------------------------
@@ -423,56 +555,9 @@ class SVDPlaceRecommender:
         return sorted(predictions, key=lambda x: x['score'], reverse=True)[:top_n]
 
 
-# class SVDRecommender(BaseRecommender):
-#     def __init__(self):
-#         self.model = SVD(n_factors=150, n_epochs=10, lr_all=0.002, reg_all=0.02)
-#         self.reader = Reader(rating_scale=(1, 5))
-
-#     def prepare_data(self):
-#         ratings = []
-#         for _, row in places.iterrows():
-#             if pd.notna(row['rating']):
-#                 ratings.append({
-#                     'user': 'default_user',
-#                     'item': row['name'],
-#                     'rating': row['rating']
-#                 })
-#         return Dataset.load_from_df(pd.DataFrame(ratings), self.reader)
-
-#     def get_recommendations(self, user_lat, user_lon, user_prefs, num_recs):
-#         data = self.prepare_data()
-#         trainset = data.build_full_trainset()
-#         self.model.fit(trainset)
-
-#         recommendations = []
-#         for _, row in places.iterrows():
-#             dist = haversine(user_lat, user_lon, row['lat'], row['lng'])
-#             if dist > 5000:
-#                 continue
-
-#             try:
-#                 pred = self.model.predict('default_user', row['name']).est
-#             except:
-#                 pred = 3.0
-
-#             type_score = 0
-#             for i, cat in enumerate(categories):
-#                 if any(pt in row['types_processed'] for pt in category_to_place_types.get(cat, [])):
-#                     type_score += user_prefs[i]
-#             type_score /= 5.0  # Normalize
-
-#             score = (0.4 * pred/5.0 +
-#                     0.4 * type_score +
-#                     0.2 * (1 - dist/5000))
-
-#             recommendations.append({
-#         return sorted(recommendations, key=lambda x: x['score'], reverse=True)[:num_recs]
-
-
 # ---------------------------
 # Transfer-Based Recommendation Wrapper
 # ---------------------------
-# (Assumes TransferRecommender is imported from your src folder)
 from src.transfer_recommender import TransferRecommender
 
 class TransferBasedRecommender:
@@ -500,16 +585,14 @@ class TransferBasedRecommender:
             user_lon=user_lon,
             places_df=self.places,
             top_n=num_recs
-
         )
 
 # ---------------------------
-# UI Setup: Sidebar and Main Input
+# Chat & UI Setup
 # ---------------------------
 st.sidebar.header("User Settings")
 user_lat = st.sidebar.number_input("Latitude", value=40.4168, format="%.4f")
 user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
-#num_recs = st.sidebar.slider("Number of Recommendations", 1, 20, 5)
 ors_key = st.sidebar.text_input("OpenRouteService API Key (optional)", value="", type="password")
 method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Ensemble"])
 profile = st.sidebar.selectbox(
@@ -538,32 +621,123 @@ if method == "Ensemble":
     }
 
 num_recs = 5
+
 st.title("Personalized Place Recommendations in Madrid")
 st.write("Rate your preferences. Check a category and use the slider (0–5) for those you care about.")
+st.subheader("💬 Chat with the Recommender")
 
-# Capture user preferences with checkboxes and sliders
-input_ratings = []
-provided_mask = []
-for cat in categories:
-    provide = st.checkbox(f"Rate **{cat}**", key=f"chk_{cat}")
-    if provide:
-        rating = st.slider(f"Rating for {cat}:", min_value=0.0, max_value=5.0, step=0.5, key=f"slider_{cat}")
-        input_ratings.append(rating)
-        provided_mask.append(True)
-    else:
-        input_ratings.append(0.0)
-        provided_mask.append(False)
-input_ratings = np.array(input_ratings, dtype=np.float32).reshape(1, -1)
-provided_mask = np.array(provided_mask, dtype=bool).reshape(1, -1)
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-# Also prepare a dictionary for Transfer-Based preferences if needed
+user_msg = st.chat_input("Tell me what you're looking for (e.g., 'I love nature and museums')")
+
+if user_msg:
+    st.session_state.messages.append({"role": "user", "content": user_msg})
+    # Call the preference extraction API with authentication
+    headers = {"Authorization": f"Bearer {st.session_state.user_token}"}
+    try:
+        response = requests.post(
+            "http://localhost:8000/extract-preferences",
+            json={"text": user_msg},
+            headers=headers
+        )
+        if response.status_code == 200:
+            extracted_prefs = response.json()["preferences"]
+            if not extracted_prefs:
+                bot_reply = "Hmm, I couldn't find any familiar categories. Try mentioning something like 'parks, cafes, museums'."
+            else:
+                # Update saved preferences with new ones
+                st.session_state.saved_preferences.update(extracted_prefs)
+                
+                # Update the UI sliders and save to database
+                for cat, rating in extracted_prefs.items():
+                    st.session_state[f"slider_{cat}"] = rating
+                    st.session_state[f"chk_{cat}"] = True
+                    try:
+                        requests.post(
+                            "http://localhost:8000/preferences/",
+                            json={"category": cat, "rating": rating},
+                            headers=headers
+                        )
+                    except Exception as e:
+                        st.error(f"Error saving preference for {cat}: {str(e)}")
+                
+                bot_reply = "Great! I've updated your preferences. You can adjust them below if needed."
+        else:
+            bot_reply = "Sorry, I couldn't process your preferences right now."
+        st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error processing preferences: {str(e)}")
+
+# Modify get_user_inputs to use saved preferences
+def get_user_inputs():
+    input_ratings = []
+    provided_mask = []
+    
+    # Create columns for better layout
+    cols = st.columns([1, 2])
+    with cols[0]:
+        st.write("**Select Categories**")
+    with cols[1]:
+        st.write("**Rate (0-5)**")
+    
+    for cat in categories:
+        default_chk = st.session_state.get(f"chk_{cat}", False)
+        default_val = st.session_state.get(f"slider_{cat}", 
+                     st.session_state.saved_preferences.get(cat, 0.0))
+        
+        cols = st.columns([1, 2])
+        with cols[0]:
+            provide = st.checkbox(f"{cat}", value=default_chk, key=f"chk_{cat}")
+        with cols[1]:
+            if provide:
+                rating = st.slider("", 
+                                min_value=0.0, max_value=5.0, 
+                                step=0.5, value=default_val, 
+                                key=f"slider_{cat}")
+                
+                # Save preference to database if it's changed
+                if rating != st.session_state.saved_preferences.get(cat, 0.0):
+                    try:
+                        response = requests.post(
+                            "http://localhost:8000/preferences/",
+                            json={"category": cat, "rating": rating},
+                            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                        )
+                        if response.status_code == 200:
+                            st.session_state.saved_preferences[cat] = rating
+                    except Exception as e:
+                        st.error(f"Error saving preference for {cat}: {str(e)}")
+                
+                input_ratings.append(rating)
+                provided_mask.append(True)
+            else:
+                # If checkbox is unchecked, remove preference from database
+                if cat in st.session_state.saved_preferences:
+                    try:
+                        response = requests.delete(
+                            f"http://localhost:8000/preferences/{cat}",
+                            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                        )
+                        if response.status_code == 200:
+                            st.session_state.saved_preferences.pop(cat, None)
+                    except Exception as e:
+                        st.error(f"Error removing preference for {cat}: {str(e)}")
+                input_ratings.append(0.0)
+                provided_mask.append(False)
+    
+    return np.array(input_ratings, dtype=np.float32).reshape(1, -1), np.array(provided_mask, dtype=bool).reshape(1, -1)
+
+input_ratings, provided_mask = get_user_inputs()
 user_preferences_dict = {cat: float(st.session_state.get(f"slider_{cat}", 0.0)) for cat in categories}
 
-# ---------------------------
-# Generate Recommendations
-# ---------------------------
-# Route Optimization Preference (for all methods)
+# Modify the Generate Recommendations button section
 if st.button("Generate Recommendations"):
+    # Store the current method
+    st.session_state.current_method = method
+    
     # Compute predicted ratings using the autoencoder (for both methods)
     input_scaled = scaler.transform(input_ratings)
     predicted_scaled = auto_model.predict(input_scaled)
@@ -603,9 +777,10 @@ if st.button("Generate Recommendations"):
                 'pred_factor': best_factor,
                 'category': best_cat
             })
-
+        
         if not candidates:
             st.error("No candidate places found within 2 km.")
+            st.session_state.current_recommendations = None
         else:
             max_reviews = max(
                 [cand['row'].get('user_ratings_total', 1) for cand in candidates
@@ -615,6 +790,7 @@ if st.button("Generate Recommendations"):
             w_rating = 0.2
             w_reviews = 0.2
             w_pred = 0.5
+            
             for candidate in candidates:
                 row_dict = candidate['row']
                 dist = candidate['distance']
@@ -625,13 +801,13 @@ if st.button("Generate Recommendations"):
                                     w_rating * norm_rating +
                                     w_reviews * norm_reviews +
                                     w_pred * candidate['pred_factor'])
-
+            
             groups = {}
             for candidate in candidates:
                 groups.setdefault(candidate['category'], []).append(candidate)
             for cat in groups:
                 groups[cat] = sorted(groups[cat], key=lambda x: x['score'], reverse=True)
-
+            
             final_candidates = []
             round_idx = 0
             while len(final_candidates) < 5:
@@ -647,7 +823,7 @@ if st.button("Generate Recommendations"):
                 round_idx += 1
 
             final_candidates = sorted(final_candidates, key=lambda x: x['score'], reverse=True)
-
+            
             flat_final_candidates = []
             for candidate in final_candidates:
                 row = candidate['row']
@@ -663,149 +839,45 @@ if st.button("Generate Recommendations"):
                     'score': candidate.get('score', 0),
                     'lat': row.get('lat', 'N/A'),
                     'lng': row.get('lng', 'N/A'),
-                    'category': candidate.get('category', 'N/A')
+                    'category': candidate.get('category', 'N/A'),
+                    'place_id': row.get('place_id', str(row.get('id', '')))
                 }
                 flat_final_candidates.append(flat_candidate)
-
-            recommendations = flat_final_candidates  # alias for later use
-
-            st.subheader("Top Place Recommendations (Autoencoder-Based)")
-            if recommendations:
-                st.markdown("### Best Recommendation")
-                display_recommendation(recommendations[0])
-                st.markdown("### Other Recommendations")
-                for rec in recommendations[1:]:
-                    display_recommendation(rec)
-            else:
-                st.error("No balanced recommendations found.")
-
-            optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
-
+            
+            # Store recommendations in session state
+            st.session_state.current_recommendations = flat_final_candidates
+            
     elif method == "SVD-Based":
         st.subheader("SVD-Based Recommendations")
         svd_rec = SVDPlaceRecommender()
         svd_rec.evaluate_model(places)
         svd_rec.fit(places)
+        recommendations = svd_rec.get_recommendations(places, user_lat, user_lng, predicted_ratings_dict, top_n=10, max_distance=5)
+        # Store recommendations in session state
+        st.session_state.current_recommendations = recommendations
         
-        recommendations = svd_rec.get_recommendations(
-            df=places,
-            user_lat=user_lat,
-            user_lon=user_lng,
-            predicted_ratings=predicted_ratings_dict,
-            top_n=10,
-            max_distance=5
-        )
-
-        st.subheader("Top Place Recommendations (SVD-Based)")
-        if recommendations:
-            st.markdown("### Best Recommendation")
-            display_recommendation(recommendations[0])
-            st.markdown("### Other Recommendations")
-            for rec in recommendations[1:]:
-                display_recommendation(rec)
-        else:
-            st.error("No recommendations found with SVD-based method.")
-
-        optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
-
     elif method == "Transfer-Based":
         st.subheader("Transfer-Based Recommendations")
         recommender = TransferBasedRecommender()
-        recommendations = recommender.get_recommendations(
-            user_lat=user_lat,
-            user_lon=user_lng,
-            user_prefs=user_preferences_dict,
-            num_recs=num_recs
-        )
+        recommendations = recommender.get_recommendations(user_lat, user_lng, user_preferences_dict, num_recs)
+        # Store recommendations in session state
+        st.session_state.current_recommendations = recommendations
 
-        if recommendations:
-            st.markdown("### Best Recommendation")
-            display_recommendation(recommendations[0])
-            st.markdown("### Other Recommendations")
-            for rec in recommendations[1:]:
-                display_recommendation(rec)
-        else:
-            st.error("No recommendations found with Transfer-Based method.")
-
-        optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
+# After the Generate Recommendations button section, add this code to display recommendations
+if st.session_state.current_recommendations:
+    method = st.session_state.current_method
+    recommendations = st.session_state.current_recommendations
     
-    elif method == "Ensemble":
-        # Import the EnsembleRecommender
-        from src.ensemble import EnsembleRecommender
+    st.subheader(f"Top Place Recommendations ({method})")
+    if recommendations:
+        st.markdown("### Best Recommendation")
+        display_recommendation(recommendations[0])
+        st.markdown("### Other Recommendations")
+        for rec in recommendations[1:]:
+            display_recommendation(rec)
         
-        # Create progress bar for ensemble initialization
-        progress_bar = st.progress(0)
-        st.write("Initializing Ensemble Recommender...")
-        
-        # Initialize the ensemble recommender with the specified weights
-        ensemble = EnsembleRecommender(weights=ensemble_weights)
-        progress_bar.progress(25)
-        
-        # Initialize all the models
-        st.write("Loading models...")
-        ensemble.initialize_models(
-            auto_model, 
-            scaler, 
-            places, 
-            category_to_place_types, 
-            AutoencoderRecommender, 
-            SVDPlaceRecommender
-        )
-        progress_bar.progress(75)
-
-        # Get ensemble recommendations
-        st.write("Generating ensemble recommendations...")
-        recommendations = ensemble.get_recommendations(
-            user_lat, user_lng,
-            user_preferences_dict,
-            predicted_ratings_dict,
-            num_recs=num_recs
-        )
-        progress_bar.progress(100)
-
-        # Display recommendations
-        st.subheader("Ensemble Recommendations")
-        if recommendations:
-            st.markdown("### Best Recommendation")
-            best = recommendations[0]
-            display_recommendation(best)
-
-            if 'sources' in best:
-                sources_str = ", ".join([s.capitalize() for s in best['sources']])
-                st.info(f"This recommendation was suggested by: {sources_str}")
-                if 'explanation' in best:
-                    st.markdown(f"*{best['explanation']}*")
-
-            st.markdown("### Other Recommendations")
-            for rec in recommendations[1:]:
-                display_recommendation(rec)
-                if 'sources' in rec:
-                    sources_str = ", ".join([s.capitalize() for s in rec['sources']])
-                    confidence = len(rec['sources']) / 3.0
-                    confidence_text = "High" if confidence > 0.66 else "Medium" if confidence > 0.33 else "Low"
-                    confidence_color = "green" if confidence > 0.66 else "orange" if confidence > 0.33 else "red"
-
-                    st.markdown(f"""
-                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                        <div>Suggested by: {sources_str}</div>
-                        <div style="margin-left: 20px; background: {confidence_color}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 0.8em;">
-                            {confidence_text} Confidence
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    if 'explanation' in rec:
-                        st.markdown(f"*{rec['explanation']}*")
-        else:
-            st.error("No recommendations found with Ensemble method.")
-
+        # Show map
+        st.subheader("Map View: Recommended Places & Optimized Route")
         optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
-
-#     # Now, call the autoencoder recommender with the provided_mask
-#     recommender = AutoencoderRecommender()
-#     recommendations = recommender.get_recommendations(user_lat, user_lng, final_predictions, provided_mask[0], num_recs)
-
-#     # Display recommendations and map (ensure recommendations have a 'row' key if your show_map expects it)
-#     for rec in recommendations:
-#         st.write(f"**{rec['name']}** (Score: {rec['score']:.2f})")
-#     show_map(recommendations, ors_key="")  # or pass your ORS API key if available
+    else:
+        st.error(f"No recommendations found with {method} method.")

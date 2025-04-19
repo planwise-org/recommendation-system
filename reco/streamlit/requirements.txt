@@ -10,3 +10,22 @@ scikit-learn==1.6.1
 pandas==2.2.3
 numpy<2
 recommenders
+
+# Libraries needed for preference extraction
+spacy>=3.0.0
+textblob
+requests
+fastapi
+uvicorn
+sentence-transformers
+scikit-learn
+nltk
+regex
+python-multipart
+vaderSentiment
+
+#for installing the requirements for running the server, you need a pythoon version 3.10 or 3.11
+#also you need to download the spacy model: python -m spacy download en_core_web_sm
+#pip install sqlalchemy and python-jose
+#pip unstall passlib
+#pip install bcrypt

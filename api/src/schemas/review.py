@@ -1,25 +1,24 @@
-from pydantic import BaseModel, confloat
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
 class ReviewBase(BaseModel):
-    rating: confloat(ge=1, le=5)
+    place_id: str  # Google Places ID
+    rating: float = Field(ge=1, le=5)
     comment: str
 
 class ReviewCreate(ReviewBase):
-    user_id: int
-    place_id: int
+    pass
 
 class ReviewRead(ReviewBase):
     id: int
     user_id: int
-    place_id: int
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class ReviewUpdate(BaseModel):
-    rating: Optional[confloat(ge=1, le=5)] = None
+    rating: Optional[float] = Field(None, ge=1, le=5)
     comment: Optional[str] = None 

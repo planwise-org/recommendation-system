@@ -12,7 +12,10 @@ WORKDIR /
 COPY requirements.txt .
 
 # Install dependencies
-RUN pip install  -r requirements.txt
+RUN pip install -r requirements.txt
+
+# Download spaCy model
+RUN python -m spacy download en_core_web_sm
 
 # Copy the application code
 COPY . .
