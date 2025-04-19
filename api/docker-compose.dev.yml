@@ -18,14 +18,14 @@ services:
 
   db:
     image: postgres:15
-    # volumes:
-    #  - postgres_data/var/lib/postgresql/data/
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     environment:
-     - POSTGRES_USER=user
-     - POSTGRES_PASSWORD=password
-     - POSTGRES_DB=planwise
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=planwise
     ports:
       - "5431:5432"
 
-  # volumes:
-  #   postgres_data:
+volumes:
+  postgres_data:
