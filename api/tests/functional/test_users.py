@@ -97,6 +97,17 @@ def test_get_user_not_found():
     response = client.get("/api/users/999999")
     assert response.status_code in error_codes
 
+def test_get_user_exists(created_user):
+    response = client.get(f"/api/users/{created_user['username']}/exists")
+    assert response.status_code in success_codes
+    assert response.json()["exists"] == True
+
+def test_get_user_not_exists():
+    response = client.get("/api/users/999999/exists")
+    assert response.status_code in success_codes
+    assert response.json()["exists"] == False
+
+
 # UPDATE USER TESTS
 def test_update_user(created_user):
     user_id = created_user["id"]
