@@ -42,7 +42,7 @@ def get_users(
     db: Session = Depends(get_session)
 ):
 
-    users = db.query(User).offset(skip).limit(limit).all()
+    users = db.exec(select(User).offset(skip).limit(limit)).all()
     return users
 
 
