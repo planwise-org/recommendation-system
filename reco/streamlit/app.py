@@ -372,20 +372,28 @@ def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, pro
 
 BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
 
-@st.cache(allow_output_mutation=True)
-def load_resources():
+@st.cache_data
+def load_places():
+    if os.environ.get('ENV') == 'prod':
+        places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
+    else:
+        places = pd.read_csv("resources/combined_places.csv")
+    places['types_processed'] = places['types'].apply(process_types)
+    return places
+
+@st.cache_resource
+def load_models():
     if os.environ.get('ENV') == 'prod':
         auto_model = load_model(os.path.join(BASE_PATH, "models/autoencoder.h5"))
         scaler = joblib.load(os.path.join(BASE_PATH, "models/scaler.save"))
-        places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
     else:
         auto_model = load_model("models/autoencoder.h5")
         scaler = joblib.load("models/scaler.save")
-        places = pd.read_csv("resources/combined_places.csv")
-    places['types_processed'] = places['types'].apply(process_types)  # Add this line
-    return auto_model, scaler, places
+    return auto_model, scaler
 
-auto_model, scaler, places = load_resources()
+# Load resources separately
+auto_model, scaler = load_models()
+places = load_places()
 
 # ---------------------------
 # Categories
@@ -735,19 +743,28 @@ def get_user_inputs():
         st.write("**Rate (0-5)**")
     
     for cat in categories:
-        default_chk = st.session_state.get(f"chk_{cat}", False)
-        default_val = st.session_state.get(f"slider_{cat}", 
-                     st.session_state.saved_preferences.get(cat, 0.0))
+        # Initialize session state for this category if not exists
+        if f"slider_{cat}" not in st.session_state:
+            st.session_state[f"slider_{cat}"] = st.session_state.saved_preferences.get(cat, 0.0)
         
         cols = st.columns([1, 2])
         with cols[0]:
-            provide = st.checkbox(f"{cat}", value=default_chk, key=f"chk_{cat}")
+            provide = st.checkbox(f"{cat}", value=cat in st.session_state.saved_preferences, key=f"chk_{cat}")
         with cols[1]:
             if provide:
-                rating = st.slider("", 
-                                min_value=0.0, max_value=5.0, 
-                                step=0.5, value=default_val, 
-                                key=f"slider_{cat}")
+                # Use a unique key for each slider that includes the current value
+                current_value = st.session_state[f"slider_{cat}"]
+                rating = st.slider(
+                    label=cat,
+                    min_value=0.0, 
+                    max_value=5.0, 
+                    step=0.5, 
+                    value=current_value,
+                    key=f"slider_{cat}_{current_value}"
+                )
+                
+                # Update session state with new value
+                st.session_state[f"slider_{cat}"] = rating
                 
                 # Save preference to database if it's changed
                 if rating != st.session_state.saved_preferences.get(cat, 0.0):
@@ -774,6 +791,8 @@ def get_user_inputs():
                         )
                         if response.status_code == 200:
                             st.session_state.saved_preferences.pop(cat, None)
+                            # Reset the slider state when unchecked
+                            st.session_state[f"slider_{cat}"] = 0.0
                     except Exception as e:
                         st.error(f"Error removing preference for {cat}: {str(e)}")
                 input_ratings.append(0.0)
