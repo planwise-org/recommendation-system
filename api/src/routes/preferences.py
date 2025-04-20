@@ -61,16 +61,16 @@ def extract_preferences(
     """Extract preferences from text and return a dictionary of category ratings."""
     text = text_input.text.lower()
     doc = nlp(text)
-    
+
     # Initialize sentiment analyzer
     blob = textblob.TextBlob(text)
     overall_sentiment = blob.sentiment.polarity
-    
+
     # Default rating based on overall sentiment
     default_rating = 3.0 + (overall_sentiment * 2)  # Scale to 1-5 range
-    
+
     preferences = {}
-    
+
     # Extract preferences based on keyword matches and local sentiment
     for category, keywords in CATEGORIES.items():
         # Check for keyword matches
@@ -81,7 +81,7 @@ def extract_preferences(
                 for sent in doc.sents:
                     if keyword in sent.text.lower():
                         matches.append(sent.text)
-        
+
         if matches:
             # Calculate sentiment for matched sentences
             local_sentiment = sum(textblob.TextBlob(match).sentiment.polarity for match in matches) / len(matches)
@@ -90,7 +90,6 @@ def extract_preferences(
             # Ensure rating is within bounds
             rating = max(1.0, min(5.0, rating))
             preferences[category] = rating
-    
     return PreferenceResponse(preferences=preferences)
 
 @router.post("/", response_model=PreferenceRead)
@@ -106,7 +105,7 @@ def create_preference(
             Preference.category == preference.category
         )
     ).first()
-    
+
     if existing:
         # Update existing preference
         existing.rating = preference.rating
@@ -114,7 +113,7 @@ def create_preference(
         db.commit()
         db.refresh(existing)
         return existing
-    
+
     # Create new preference
     db_preference = Preference(
         user_id=current_user.id,
@@ -176,7 +175,7 @@ def update_preference(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Preference not found"
         )
-    
+
     preference.rating = preference_update.rating
     db.add(preference)
     db.commit()
@@ -201,7 +200,7 @@ def delete_preference(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Preference not found"
         )
-    
+
     db.delete(preference)
     db.commit()
-    return None 
+    return None

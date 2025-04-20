@@ -37,7 +37,6 @@ def test_review_data(created_place):
 
 @pytest.fixture
 def created_review(test_review_data, auth_headers):
-    print("TEST REVIEW DATA", test_review_data)
     response = client.post("/api/reviews/", json=test_review_data, headers=auth_headers)
     assert response.status_code in [200, 201]
     return response.json()

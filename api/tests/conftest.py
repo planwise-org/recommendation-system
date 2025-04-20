@@ -34,6 +34,14 @@ def test_place_data():
     }
 
 
+
+@pytest.fixture
+def test_preference_data():
+    return {
+        "category": "restaurants",
+        "rating": 4.5
+    }
+
 @pytest.fixture
 def network_codes():
     return {
