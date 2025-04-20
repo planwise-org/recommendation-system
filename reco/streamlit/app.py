@@ -53,7 +53,7 @@ def login_user(username: str, password: str):
     try:
         # First check if user exists
         check_user = requests.get(
-            f"http://localhost:8000/users/{username}/exists",
+            f"http://localhost:8080/api/users/{username}/exists",
             headers={"Content-Type": "application/json"}
         )
         if check_user.status_code == 404:
@@ -62,7 +62,7 @@ def login_user(username: str, password: str):
 
         # Try to login
         response = requests.post(
-            "http://localhost:8000/token",
+            "http://localhost:8080/api/token",
             data={"username": username, "password": password}
         )
         if response.status_code == 200:
@@ -71,26 +71,34 @@ def login_user(username: str, password: str):
             st.session_state.username = username
             return True
         elif response.status_code == 401:
-            st.error("Incorrect password. Please try again.")
+            error_detail = response.json().get('detail', 'Incorrect password')
+            st.error(f"Login failed: {error_detail}")
             return False
         else:
-            st.error("Login failed. Please try again.")
+            error_detail = response.json().get('detail', 'Unknown error')
+            st.error(f"Login failed: {error_detail}")
             return False
     except Exception as e:
         st.error(f"Login failed: {str(e)}")
         return False
 
-def register_user(username: str, email: str, password: str):
+def register_user(username: str, password: str):
     try:
         response = requests.post(
-            "http://localhost:8000/users/",
-            json={"username": username, "email": email, "password": password}
+            "http://localhost:8080/api/users/",
+            json={
+                "username": username,
+                "password": password,
+                "full_name": username,  # Using username as full_name for now
+                "role": "user"  # This will be converted to UserRole.USER by the API
+            }
         )
-        if response.status_code == 200:
+        if response.status_code in [200, 201]:  # Accept both 200 and 201
             st.success("Registration successful! Please log in.")
             return True
         else:
-            st.error(f"Registration failed: {response.json()['detail']}")
+            error_detail = response.json().get('detail', 'Unknown error')
+            st.error(f"Registration failed: {error_detail}")
             return False
     except Exception as e:
         st.error(f"Registration failed: {str(e)}")
@@ -113,10 +121,9 @@ if not st.session_state.user_token:
     with tab2:
         st.header("Sign Up")
         reg_username = st.text_input("Username", key="reg_username")
-        reg_email = st.text_input("Email", key="reg_email")
         reg_password = st.text_input("Password", type="password", key="reg_password")
         if st.button("Register"):
-            if register_user(reg_username, reg_email, reg_password):
+            if register_user(reg_username, reg_password):
                 st.info("Please proceed to login.")
     st.stop()
 
@@ -133,7 +140,7 @@ if st.session_state.user_token:
     try:
         # Load preferences
         pref_response = requests.get(
-            "http://localhost:8000/preferences/",
+            "http://localhost:8080/api/preferences/",
             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
         )
         if pref_response.status_code == 200:
@@ -148,7 +155,7 @@ if st.session_state.user_token:
         
         # Load reviews
         review_response = requests.get(
-            "http://localhost:8000/reviews/",
+            "http://localhost:8080/api/reviews/",
             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
         )
         if review_response.status_code == 200:
@@ -282,6 +289,50 @@ def display_recommendation(rec):
                 st.write(f"**Types:** {rec.get('types', 'N/A')}")
                 st.write(f"**Description:** {rec.get('description', 'No description available.')}")
                 st.write(f"**Coordinates:** (Lat: {rec.get('lat', 'N/A')}, Lon: {rec.get('lng', 'N/A')})")
+            
+            # Add review section
+            place_id = rec.get('place_id')
+            if place_id:
+                # Check if user has already reviewed this place
+                try:
+                    review_response = requests.get(
+                        f"http://localhost:8080/api/reviews/user/{place_id}",
+                        headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                    )
+                    if review_response.status_code == 200:
+                        review_data = review_response.json()
+                        if review_data['submitted']:
+                            st.markdown("**Your Review:**")
+                            st.markdown(f"Rating: {review_data['rating']} ⭐")
+                            if review_data['comment']:
+                                st.markdown(f"Comment: {review_data['comment']}")
+                        else:
+                            with st.form(f"review_form_{place_id}"):
+                                st.markdown("**Write a Review**")
+                                rating = st.slider("Rating", 1.0, 5.0, 3.0, 0.5)
+                                comment = st.text_area("Comment (optional)")
+                                if st.form_submit_button("Submit Review"):
+                                    try:
+                                        response = requests.post(
+                                            "http://localhost:8080/api/reviews/",
+                                            json={
+                                                "place_id": place_id,
+                                                "rating": rating,
+                                                "comment": comment
+                                            },
+                                            headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                                        )
+                                        if response.status_code in [200, 201]:
+                                            st.success("Review submitted successfully!")
+                                            st.rerun()
+                                        else:
+                                            st.error(f"Failed to submit review. Status code: {response.status_code}")
+                                            if response.text:
+                                                st.error(f"Error details: {response.text}")
+                                    except Exception as e:
+                                        st.error(f"Error submitting review: {str(e)}")
+                except Exception as e:
+                    st.error(f"Error loading review data: {str(e)}")
 
 def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile):
     recs_for_map = [{'row': rec} for rec in recommendations] if 'row' not in recommendations[0] else recommendations
@@ -469,7 +520,7 @@ if user_msg:
     headers = {"Authorization": f"Bearer {st.session_state.user_token}"}
     try:
         response = requests.post(
-            "http://localhost:8000/extract-preferences",
+            "http://localhost:8080/api/preferences/extract-preferences",
             json={"text": user_msg},
             headers=headers
         )
@@ -486,8 +537,8 @@ if user_msg:
                     st.session_state[f"slider_{cat}"] = rating
                     st.session_state[f"chk_{cat}"] = True
                     try:
-                        requests.post(
-                            "http://localhost:8000/preferences/",
+                        response = requests.post(
+                            "http://localhost:8080/api/preferences/",
                             json={"category": cat, "rating": rating},
                             headers=headers
                         )
@@ -533,7 +584,7 @@ def get_user_inputs():
                 if rating != st.session_state.saved_preferences.get(cat, 0.0):
                     try:
                         response = requests.post(
-                            "http://localhost:8000/preferences/",
+                            "http://localhost:8080/api/preferences/",
                             json={"category": cat, "rating": rating},
                             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                         )
@@ -549,7 +600,7 @@ def get_user_inputs():
                 if cat in st.session_state.saved_preferences:
                     try:
                         response = requests.delete(
-                            f"http://localhost:8000/preferences/{cat}",
+                            f"http://localhost:8080/api/preferences/{cat}",
                             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                         )
                         if response.status_code == 200:
