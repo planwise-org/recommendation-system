@@ -30,4 +30,4 @@ class PlaceUpdate(BaseModel):
     latitude: Optional[confloat(ge=-90, le=90)] = None
     longitude: Optional[confloat(ge=-180, le=180)] = None
     place_type: Optional[PlaceType] = None
-    rating: Optional[float] = None 
+    rating: Optional[float] = None

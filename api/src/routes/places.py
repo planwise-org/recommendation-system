@@ -46,11 +46,11 @@ def update_place(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Place not found"
         )
-    
+
     # Update place fields
     for field, value in place_update.dict(exclude_unset=True).items():
         setattr(db_place, field, value)
-    
+
     db.add(db_place)
     db.commit()
     db.refresh(db_place)
@@ -64,7 +64,7 @@ def delete_place(place_id: int, db: Session = Depends(get_session)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Place not found"
         )
-    
+
     db.delete(place)
     db.commit()
-    return None 
+    return None

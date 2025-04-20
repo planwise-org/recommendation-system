@@ -21,9 +21,22 @@ def test_user_data():
         "role": UserRole.USER
     }
 
+
+@pytest.fixture
+def test_place_data():
+    return {
+        "name": "Test Restaurant",
+        "description": "A cozy restaurant for testing",
+        "address": "123 Test Street",
+        "latitude": 40.7128,
+        "longitude": -74.0060,
+        "place_type": "restaurant"
+    }
+
+
 @pytest.fixture
 def network_codes():
     return {
-        "success": [200, 201],
+        "success": [200, 201, 204],
         "error": [400, 401, 404, 422]
     }
