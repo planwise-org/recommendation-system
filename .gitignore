@@ -4,3 +4,5 @@ venv/
 __pycache__/
 *.pyc
 .DS_Store
+
+Esemble_models/
