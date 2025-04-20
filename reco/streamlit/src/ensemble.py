@@ -269,3 +269,17 @@ class EnsembleRecommender:
         except Exception as e:
             print(f"Error in transfer recommendations: {e}")
             return []
+
+    def initialize_models_from_reviews(self, reviews_df, places_df=None):
+        from reco import SVDPlaceRecommender
+        from transfer_recommender import TransferRecommender
+
+        self.svd_recommender = SVDPlaceRecommender()
+        self.svd_recommender.fit(reviews_df)
+
+        self.transfer_recommender = TransferRecommender()
+        if places_df is not None:
+            self.transfer_recommender.transfer_to_places(places_df)
+
+
+        self.places_df = places_df

@@ -5,15 +5,17 @@ from ..models import Review
 from ..schemas.review import ReviewCreate, ReviewRead, ReviewUpdate
 from ..database import get_session
 from ..services.auth import get_current_user
+from ..services.training import retrain_ensemble_model
 
 router = APIRouter()
 
 @router.post("/", response_model=ReviewRead, status_code=status.HTTP_201_CREATED)
 def create_review(
     review: ReviewCreate,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_session)
+    db: Session = Depends(get_session),
+    current_user = Depends(get_current_user)
 ):
+    # Save new review
     db_review = Review(
         user_id=current_user.id,
         place_id=review.place_id,
@@ -23,6 +25,15 @@ def create_review(
     db.add(db_review)
     db.commit()
     db.refresh(db_review)
+
+    # Count reviews by this user
+    total_user_reviews = db.exec(
+        select(Review).where(Review.user_id == current_user.id)
+    ).all()
+
+    if len(total_user_reviews) % 5 == 0:  # Every 5th review
+        retrain_ensemble_model(db)
+
     return db_review
 
 @router.get("/", response_model=List[ReviewRead])

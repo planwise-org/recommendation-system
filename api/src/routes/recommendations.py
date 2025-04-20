@@ -5,6 +5,8 @@ from ..models import Recommendation
 from ..schemas.recommendation import RecommendationCreate, RecommendationRead, RecommendationUpdate
 from ..database import get_session
 from ..services.recommendation import generate_recommendations
+from ..services.training import ensemble_model
+from ..models import User
 
 router = APIRouter()
 
@@ -38,6 +40,46 @@ def generate_user_recommendations(
     algorithm: str = "autoencoder",
     db: Session = Depends(get_session)
 ):
+    if algorithm == "ensemble":
+        if ensemble_model is None:
+            raise HTTPException(status_code=503, detail="Ensemble model not trained yet")
+
+        user = db.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # replace with real user data if available
+        user_lat = 40.4168
+        user_lon = -3.7038
+        user_prefs = {cat: 3.0 for cat in ensemble_model.category_to_place_types.keys()}
+        predicted_ratings = user_prefs
+
+        recommendations = ensemble_model.get_recommendations(
+            user_lat=user_lat,
+            user_lon=user_lon,
+            user_prefs=user_prefs,
+            predicted_ratings_dict=predicted_ratings,
+            num_recs=5
+        )
+
+        db_recommendations = []
+        for rec in recommendations:
+            db_rec = Recommendation(
+                user_id=user_id,
+                place_id=rec.get("place_id", rec.get("name")),
+                algorithm="ensemble",
+                score=rec.get("ensemble_score", 0.0),
+                visited=False,
+                reviewed=False
+            )
+            db.add(db_rec)
+            db_recommendations.append(db_rec)
+        db.commit()
+        for rec in db_recommendations:
+            db.refresh(rec)
+        return db_recommendations
+
+    # Otherwise fallback to default 
     recommendations = generate_recommendations(db, user_id, algorithm)
     db_recommendations = []
     for rec in recommendations:
