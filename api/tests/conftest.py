@@ -20,3 +20,10 @@ def test_user_data():
         "full_name": "Test User",
         "role": UserRole.USER
     }
+
+@pytest.fixture
+def network_codes():
+    return {
+        "success": [200, 201],
+        "error": [400, 401, 404, 422]
+    }
