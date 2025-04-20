@@ -12,6 +12,8 @@ jose==1.0.0
 python-jose==3.3.0
 pytest==8.3.5
 pytest-env==1.1.5
+pytest-asyncio==0.26.0
+httpx==0.28.1
 supabase
 python-multipart==0.0.12
 email-validator==2.1.0.post1
@@ -21,5 +23,6 @@ pandas==2.2.1
 python-dotenv==1.0.1
 PyYAML==6.0.1
 supabase==2.15.0
-spacy==3.7.4
+bcrypt
+spacy==3.8.5
 textblob==0.17.1

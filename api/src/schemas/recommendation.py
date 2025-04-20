@@ -1,11 +1,18 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from enum import Enum
+
+
+class RecommendationAlgorithm(str, Enum):
+    AUTOENCODER = "autoencoder"
+    SVD = "svd"
+    TRANSFER_LEARNING = "transfer_learning"
 
 class RecommendationBase(BaseModel):
     user_id: int
     place_id: int
-    algorithm: str
+    algorithm: RecommendationAlgorithm
     score: float
 
 class RecommendationCreate(RecommendationBase):
@@ -23,4 +30,4 @@ class RecommendationRead(RecommendationBase):
 
 class RecommendationUpdate(BaseModel):
     visited: Optional[bool] = None
-    reviewed: Optional[bool] = None 
+    reviewed: Optional[bool] = None

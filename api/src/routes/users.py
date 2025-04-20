@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
+from typing import List
+from ..models import User
 from ..database import get_session
 from ..models import User
 from ..schemas.user import UserCreate, UserRead, UserUpdate
@@ -12,6 +14,8 @@ router = APIRouter()
 def create_user(user: UserCreate, db: Session = Depends(get_session)):
     # Check if username already exists
     db_user = db.exec(select(User).where(User.username == user.username)).first()
+
+
     if db_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -38,7 +42,7 @@ def get_users(
     db: Session = Depends(get_session)
 ):
 
-    users = db.query(User).offset(skip).limit(limit).all()
+    users = db.exec(select(User).offset(skip).limit(limit)).all()
     return users
 
 

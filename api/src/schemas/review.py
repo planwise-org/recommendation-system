@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 class ReviewBase(BaseModel):
-    place_id: str  # Google Places ID
+    place_id: int # Google Places ID
     rating: float = Field(ge=1, le=5)
     comment: str
 
@@ -21,4 +21,4 @@ class ReviewRead(ReviewBase):
 
 class ReviewUpdate(BaseModel):
     rating: Optional[float] = Field(None, ge=1, le=5)
-    comment: Optional[str] = None 
+    comment: Optional[str] = None

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from typing import List
 from ..models import Recommendation
-from ..schemas.recommendation import RecommendationCreate, RecommendationRead, RecommendationUpdate
+from ..schemas.recommendation import RecommendationCreate, RecommendationRead, RecommendationUpdate, RecommendationAlgorithm
 from ..database import get_session
 from ..services.recommendation import generate_recommendations
 
@@ -35,7 +35,7 @@ def get_recommendations(
 @router.post("/generate/{user_id}", response_model=List[RecommendationRead])
 def generate_user_recommendations(
     user_id: int,
-    algorithm: str = "autoencoder",
+    algorithm: RecommendationAlgorithm = RecommendationAlgorithm.AUTOENCODER,
     db: Session = Depends(get_session)
 ):
     recommendations = generate_recommendations(db, user_id, algorithm)
@@ -78,11 +78,11 @@ def update_recommendation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Recommendation not found"
         )
-    
+
     # Update recommendation fields
     for field, value in recommendation_update.dict(exclude_unset=True).items():
         setattr(db_recommendation, field, value)
-    
+
     db.add(db_recommendation)
     db.commit()
     db.refresh(db_recommendation)
@@ -96,7 +96,7 @@ def mark_recommendation_visited(recommendation_id: int, db: Session = Depends(ge
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Recommendation not found"
         )
-    
+
     db_recommendation.visited = True
     db.add(db_recommendation)
     db.commit()
@@ -111,7 +111,7 @@ def mark_recommendation_reviewed(recommendation_id: int, db: Session = Depends(g
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Recommendation not found"
         )
-    
+
     db_recommendation.reviewed = True
     db.add(db_recommendation)
     db.commit()
@@ -126,7 +126,7 @@ def delete_recommendation(recommendation_id: int, db: Session = Depends(get_sess
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Recommendation not found"
         )
-    
+
     db.delete(recommendation)
     db.commit()
-    return None 
+    return None

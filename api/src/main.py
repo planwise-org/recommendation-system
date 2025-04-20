@@ -18,23 +18,24 @@ import logging
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
 import os
+from .database import engine
+from contextlib import asynccontextmanager
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="Planwise API",
-    description="API for the Planwise recommendation system",
-    version="1.0.0"
-)
 
-@app.on_event("startup")
-async def startup_event():
+
+
+# same as startup_event, but this lifespan is updated for latest FastAPI version
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     logger.debug("Starting up the application")
+    if os.environ.get("ENV") == "test": return
+
     try:
         # Test database connection first
-        from .database import engine
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
             logger.info("Database connection test successful")
@@ -49,6 +50,16 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Unexpected error during startup: {str(e)}")
         raise
+
+    yield
+    logger.debug("Shutting down the application")
+
+app = FastAPI(
+    title="Planwise API",
+    description="API for the Planwise recommendation system",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 # Configure CORS
 app.add_middleware(
