@@ -29,7 +29,7 @@ elif os.environ.get("ENV") == "prod":
     DATABASE_URL = os.environ.get("SUPABASE_URL")
     engine = create_engine(DATABASE_URL)
 
-    logger.info("Connected to Supabase client")
+    print("Connected to Supabase")
 
 # Get database URL from environment variable or use default
 # DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/planwise_db") # hardcoded
