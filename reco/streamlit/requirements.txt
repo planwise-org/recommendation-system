@@ -9,9 +9,8 @@ surprise
 scikit-learn==1.6.1
 pandas==2.2.3
 numpy<2
-recommenders
-
-# Libraries needed for preference extraction
+<<<<<<< HEAD
+# # Libraries needed for preference extraction
 spacy>=3.0.0
 textblob
 requests
@@ -29,3 +28,6 @@ vaderSentiment
 #pip install sqlalchemy and python-jose
 #pip unstall passlib
 #pip install bcrypt
+=======
+recommenders
+>>>>>>> origin/main
