@@ -32,7 +32,7 @@ from src.recommenders import (
 # Path optimization
 from pathway import get_optimal_path
 from pathway import reorder_with_tsp
-
+from src.madrid_transfer_recommender import MadridTransferRecommender
 # Initialize session state for user authentication
 if 'user_token' not in st.session_state:
     st.session_state.user_token = None
@@ -484,7 +484,7 @@ st.sidebar.header("User Settings")
 user_lat = st.sidebar.number_input("Latitude", value=40.4168, format="%.4f")
 user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
 ors_key = st.sidebar.text_input("OpenRouteService API Key (optional)", value="", type="password")
-method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Ensemble"])
+method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Madrid Transfer-Based","Ensemble"])
 profile = st.sidebar.selectbox(
     "Routing Profile",
     options=["foot-walking", "driving-car"],
@@ -722,7 +722,11 @@ if st.button("Generate Recommendations"):
         )
         # Store recommendations in session state
         st.session_state.current_recommendations = recommendations
-
+    elif method == "Madrid Transfer-Based":
+        st.subheader("Madrid Transfer-Based Recommendations")
+        madrid_recommender = MadridTransferRecommender()
+        recommendations = madrid_recommender.get_recommendations(user_preferences_dict, user_lat, user_lng, num_recs)
+        st.session_state.current_recommendations = recommendations
 # After the Generate Recommendations button section, add this code to display recommendations
 if st.session_state.current_recommendations:
     method = st.session_state.current_method
