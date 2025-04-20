@@ -1,0 +1,26 @@
+tensorflow==2.18.0
+joblib
+streamlit==1.42.2
+pydeck
+networkx
+openrouteservice
+matplotlib==3.10.0
+surprise
+scikit-learn==1.6.1
+pandas==2.2.3
+numpy<2
+recommenders
+
+
+# Libraries needed for preference extraction
+spacy>=3.0.0
+textblob
+requests
+fastapi
+uvicorn
+sentence-transformers
+scikit-learn
+nltk
+regex
+python-multipart
+vaderSentiment

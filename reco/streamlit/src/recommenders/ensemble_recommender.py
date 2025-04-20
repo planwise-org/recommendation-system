@@ -1,9 +1,16 @@
+"""
+Ensemble recommender that combines multiple recommendation models.
+"""
+
 import numpy as np
 import pandas as pd
 import math
-from src.transfer_recommender import TransferRecommender
+from .base_recommender import BaseRecommender
+from .autoencoder_recommender import AutoencoderRecommender
+from .svd_recommender import SVDPlaceRecommender
+from .transfer_recommender import TransferRecommender
 
-class EnsembleRecommender:
+class EnsembleRecommender(BaseRecommender):
     """
     A recommender that combines results from multiple recommendation models to provide
     better and more diverse place recommendations.
@@ -19,9 +26,6 @@ class EnsembleRecommender:
     3. Combining recommendations with weighted scores based on model weights
     4. De-duplicating places that appear in multiple recommendation sets
     5. Ranking based on the combined ensemble score
-    
-    This approach typically provides more robust recommendations by leveraging the
-    strengths of each individual model while mitigating their weaknesses.
     """
     
     def __init__(self, weights=None):
@@ -39,8 +43,9 @@ class EnsembleRecommender:
         self.transfer_recommender = None
         self.places_df = None
         self.max_distance = 2000  # meters
+        self.category_to_place_types = None
         
-    def initialize_models(self, auto_model, scaler, places_df, category_to_place_types, AutoencoderRecommender, SVDPlaceRecommender, svd_params=None):
+    def initialize_models(self, auto_model, scaler, places_df, category_to_place_types):
         """
         Initialize all the recommender models.
         
@@ -49,21 +54,23 @@ class EnsembleRecommender:
             scaler: The scaler used for autoencoder input/output
             places_df: DataFrame containing places data
             category_to_place_types: Mapping from categories to place types
-            AutoencoderRecommender: AutoencoderRecommender class
-            SVDPlaceRecommender: SVDPlaceRecommender class
-            svd_params: Parameters for the SVD model
         """
         self.places_df = places_df
         self.category_to_place_types = category_to_place_types
         
-        # Initialize the autoencoder recommender
-        self.autoencoder_recommender = AutoencoderRecommender()
+        # Initialize component recommenders
+        self.autoencoder_recommender = AutoencoderRecommender(
+            auto_model=auto_model, 
+            scaler=scaler, 
+            places_df=places_df, 
+            category_mappings=category_to_place_types
+        )
         
-        # Initialize the SVD recommender
-        self.svd_recommender = SVDPlaceRecommender(svd_params)
+        self.svd_recommender = SVDPlaceRecommender(
+            category_to_place_types=category_to_place_types
+        )
         self.svd_recommender.fit(places_df)
         
-        # Initialize the transfer learning recommender
         self.transfer_recommender = TransferRecommender()
         self.transfer_recommender.train_base_model()
         self.transfer_recommender.transfer_to_places(places_df)
@@ -111,7 +118,7 @@ class EnsembleRecommender:
         Args:
             user_lat: User's latitude
             user_lon: User's longitude
-            user_prefs: User preferences array
+            user_prefs: User preferences array or dictionary
             predicted_ratings_dict: Dictionary of predicted category ratings
             num_recs: Number of recommendations to return
             
@@ -169,6 +176,7 @@ class EnsembleRecommender:
         
         # Convert back to list and sort by ensemble score
         final_recs = list(unique_recs.values())
+        
         # Update explanations for places with multiple sources
         for rec in final_recs:
             if len(rec['sources']) > 1:
@@ -182,61 +190,24 @@ class EnsembleRecommender:
     
     def _get_autoencoder_recommendations(self, user_lat, user_lon, user_prefs, num_recs):
         """Get recommendations from the autoencoder model."""
-        # Extract the final_predictions from user_prefs
         if self.autoencoder_recommender is None:
             return []
             
         try:
-            # Since we can't directly use the model's get_recommendations due to import issues,
-            # we'll implement a simplified version here based on the original code
-            candidates = []
-            for _, row in self.places_df.iterrows():
-                dist = self.haversine(user_lat, user_lon, row['lat'], row['lng'])
-                if dist > self.max_distance:
-                    continue
-                    
-                best_cat = None
-                best_score = 0
+            # Convert user_prefs dict to array if needed
+            if isinstance(user_prefs, dict):
+                # Placeholder code - you would need to implement this conversion
+                # based on your actual preference structure
+                provided_mask = np.array([True if val > 0 else False for val in user_prefs.values()])
+                user_prefs_array = np.array(list(user_prefs.values()))
+            else:
+                # Assuming user_prefs is already an array and provided_mask is included
+                user_prefs_array = user_prefs
+                provided_mask = np.ones_like(user_prefs_array, dtype=bool)
                 
-                # For each category, check if this place matches and get the highest score
-                for i, cat in enumerate(user_prefs.keys()):
-                    cat_rating = user_prefs[cat]
-                    mapped_types = self.category_to_place_types.get(cat, [])
-                    
-                    # Check if any of the place types match this category
-                    if any(pt in row['types_processed'] for pt in mapped_types):
-                        cat_score = cat_rating / 5.0  # Normalize to 0-1
-                        if cat_score > best_score:
-                            best_score = cat_score
-                            best_cat = cat
-                
-                if best_cat:
-                    # Calculate overall score with multiple factors
-                    norm_rating = (row['rating'] / 5.0) if pd.notna(row['rating']) else 0
-                    norm_reviews = (np.log(row['user_ratings_total'] + 1)) / np.log(self.places_df['user_ratings_total'].max() + 1) if pd.notna(row['user_ratings_total']) else 0
-                    
-                    score = (0.1 * (1 - dist/self.max_distance) +
-                            0.2 * norm_rating +
-                            0.2 * norm_reviews +
-                            0.5 * best_score)
-                    
-                    candidates.append({
-                        'name': row['name'],
-                        'lat': row['lat'],
-                        'lng': row['lng'],
-                        'score': score,
-                        'rating': row['rating'],
-                        'user_ratings_total': row['user_ratings_total'],
-                        'types': row['types'],
-                        'distance': dist,
-                        'category': best_cat,
-                        'icon': row.get('icon', ''),
-                        'vicinity': row.get('vicinity', '')
-                    })
-            
-            candidates.sort(key=lambda x: x['score'], reverse=True)
-            return candidates[:num_recs]
-            
+            return self.autoencoder_recommender.get_recommendations(
+                user_lat, user_lon, user_prefs_array, provided_mask, num_recs
+            )
         except Exception as e:
             print(f"Error in autoencoder recommendations: {e}")
             return []
@@ -270,4 +241,4 @@ class EnsembleRecommender:
             )
         except Exception as e:
             print(f"Error in transfer recommendations: {e}")
-            return []
+            return [] 
