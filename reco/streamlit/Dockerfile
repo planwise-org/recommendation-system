@@ -36,7 +36,7 @@ RUN python -m spacy download en_core_web_sm
 COPY . .
 
 # Expose the FastAPI port
-# EXPOSE 8501
+EXPOSE 8501
 
 # Command to run FastAPI with Uvicorn
-# CMD ["streamlit", "run", "app.py"]
+CMD ["streamlit", "run", "app.py", "--server.port", "8501"]
