@@ -20,47 +20,47 @@ Planwise delivers a complete recommendation engine for both locals and tourists 
 ## Navigation
 
 ### Overview
-- [Architecture](/overview/architecture)
-- [Business Value](/overview/business-value)
-- [Project Management](/overview/project-management)
+- [Architecture](overview/architecture)
+- [Business Value](overview/business-value)
+- [Project Management](overview/project-management)
 
 ### Data
-- [Datasets](/data/datasets)
-- [Preprocessing](/data/preprocessing)
-- [Exploratory Data Analysis](/data/eda)
+- [Datasets](data/datasets)
+- [Preprocessing](data/preprocessing)
+- [Exploratory Data Analysis](data/eda)
 
 ### Models
-- [Ensemble](/models/ensemble)
-- [Autoencoder](/models/autoencoder)
-- [SVD](/models/svd)
-- [Transfer Learning](/models/transfer-learning)
-- [Madrid Embeddings](/models/madrid-embeddings)
+- [Ensemble](models/ensemble)
+- [Autoencoder](models/autoencoder)
+- [SVD](models/svd)
+- [Transfer Learning](models/transfer-learning)
+- [Madrid Embeddings](models/madrid-embeddings)
 
 ### Interfaces
-- [Streamlit App](/interfaces/streamlit-app)
-- [Chatbot](/interfaces/chatbot)
+- [Streamlit App](interfaces/streamlit-app)
+- [Chatbot](interfaces/chatbot)
 
 ### API
-- [Overview](/api/overview)
-- [Endpoints](/api/endpoints)
-- [Authentication](/api/authentication)
-- [Deployment](/api/deployment)
+- [Overview](api/overview)
+- [Endpoints](api/endpoints)
+- [Authentication](api/authentication)
+- [Deployment](api/deployment)
 
 ### Development
-- [Environment Setup](/development/environment-setup)
-- [Contribution Guide](/development/contribution-guide)
-- [Code Quality](/development/code-quality)
+- [Environment Setup](development/environment-setup)
+- [Contribution Guide](development/contribution-guide)
+- [Code Quality](development/code-quality)
 
 ### Testing
-- [Overview](/testing/overview)
-- [Unit Tests](/testing/unit-tests)
-- [Integration Tests](/testing/integration-tests)
+- [Overview](testing/overview)
+- [Unit Tests](testing/unit-tests)
+- [Integration Tests](testing/integration-tests)
 
 ### Deployment
-- [CI/CD](/deployment/ci-cd)
-- [MLOps](/deployment/mlops)
-- [Database](/deployment/database)
-- [Security](/deployment/security)
+- [CI/CD](deployment/ci-cd)
+- [MLOps](deployment/mlops)
+- [Database](deployment/database)
+- [Security](deployment/security)
 
 ## Getting Started
 
