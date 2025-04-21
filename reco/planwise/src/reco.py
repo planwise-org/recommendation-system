@@ -2,8 +2,6 @@ import pandas as pd
 import numpy as np
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
-from surprise import accuracy
-from collections import defaultdict
 from math import radians, sin, cos, sqrt, atan2
 import os
 
@@ -226,11 +224,8 @@ def main():
         "zoo": 4.5,
         "supermarket": 0.0
     }
-    BASE_PATH = "reco/planwise/"
-    if os.environ.get("ENV") == "prod":
-        df = pd.read_csv(BASE_PATH + 'combined_places.csv')
-    else:
-        df = pd.read_csv('combined_places.csv')
+
+    df = pd.read_csv('resources/combined_places.csv')
 
     recommender = SVDPlaceRecommender()
 

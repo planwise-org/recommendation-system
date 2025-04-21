@@ -23,8 +23,8 @@ import requests  # For calling the API
 
 # Import recommender models from new structure
 from src.recommenders import (
-    AutoencoderRecommender, 
-    SVDPlaceRecommender, 
+    AutoencoderRecommender,
+    SVDPlaceRecommender,
     TransferRecommender,
     EnsembleRecommender,
     MadridTransferRecommender
@@ -52,11 +52,15 @@ if 'current_method' not in st.session_state:
 if 'models' not in st.session_state:
     st.session_state.models = {}
 
+
+
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8080')
+
 def login_user(username: str, password: str):
     try:
         # First check if user exists
         check_user = requests.get(
-            f"http://localhost:8080/api/users/{username}/exists",
+            f"{BACKEND_URL}/api/users/{username}/exists",
             headers={"Content-Type": "application/json"}
         )
         if check_user.status_code == 404:
@@ -65,7 +69,7 @@ def login_user(username: str, password: str):
 
         # Try to login
         response = requests.post(
-            "http://localhost:8080/api/token",
+            f"{BACKEND_URL}/api/token",
             data={"username": username, "password": password}
         )
         if response.status_code == 200:
@@ -88,7 +92,7 @@ def login_user(username: str, password: str):
 def register_user(username: str, password: str):
     try:
         response = requests.post(
-            "http://localhost:8080/api/users/",
+            f"{BACKEND_URL}/api/users/",
             json={
                 "username": username,
                 "password": password,
@@ -111,7 +115,7 @@ def register_user(username: str, password: str):
 if not st.session_state.user_token:
     st.title("Welcome to Place Recommender")
     tab1, tab2 = st.tabs(["Login", "Sign Up"])
-    
+
     with tab1:
         st.header("Login")
         login_username = st.text_input("Username", key="login_username")
@@ -120,7 +124,7 @@ if not st.session_state.user_token:
             if login_user(login_username, login_password):
                 st.success("Logged in successfully!")
                 st.rerun()
-    
+
     with tab2:
         st.header("Sign Up")
         reg_username = st.text_input("Username", key="reg_username")
@@ -143,22 +147,22 @@ if st.session_state.user_token:
     try:
         # Load preferences
         pref_response = requests.get(
-            "http://localhost:8080/api/preferences/",
+            f"{BACKEND_URL}/api/preferences/",
             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
         )
         if pref_response.status_code == 200:
             st.session_state.saved_preferences = {
-                pref['category']: pref['rating'] 
+                pref['category']: pref['rating']
                 for pref in pref_response.json()
             }
             # Set the sliders for saved preferences
             for cat, rating in st.session_state.saved_preferences.items():
                 st.session_state[f"slider_{cat}"] = rating
                 st.session_state[f"chk_{cat}"] = True
-        
+
         # Load reviews
         review_response = requests.get(
-            "http://localhost:8080/api/reviews/",
+            f"{BACKEND_URL}/api/reviews/",
             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
         )
         if review_response.status_code == 200:
@@ -224,7 +228,7 @@ def show_map(recs, ors_key, profile="foot-walking"):
         'lat': lats,
         'lon': lons
     })
-    
+
     # If there's only one location, just show it without route optimization
     if len(map_df) == 1:
         text_layer = pdk.Layer(
@@ -250,7 +254,7 @@ def show_map(recs, ors_key, profile="foot-walking"):
         )
         st.pydeck_chart(deck)
         return
-        
+
     route_coords = None
     if not map_df.empty:
         if ors_key and ors_key != "":
@@ -278,7 +282,7 @@ def show_map(recs, ors_key, profile="foot-walking"):
                 route_coords = None
         else:
             optimized_data = map_df.copy()
-        
+
         text_layer = pdk.Layer(
             "TextLayer",
             data=optimized_data,
@@ -289,9 +293,9 @@ def show_map(recs, ors_key, profile="foot-walking"):
             get_angle=0,
             anchor='middle'
         )
-        
+
         layers = [text_layer]
-        
+
         # Only add path layer if we have route coordinates
         if route_coords:
             path_layer = pdk.Layer(
@@ -303,7 +307,7 @@ def show_map(recs, ors_key, profile="foot-walking"):
                 width_min_pixels=3,
             )
             layers.append(path_layer)
-            
+
         view_state = pdk.ViewState(
             latitude=optimized_data['lat'].mean(),
             longitude=optimized_data['lon'].mean(),
@@ -332,14 +336,14 @@ def display_recommendation(rec):
                 st.write(f"**Types:** {rec.get('types', 'N/A')}")
                 st.write(f"**Description:** {rec.get('description', 'No description available.')}")
                 st.write(f"**Coordinates:** (Lat: {rec.get('lat', 'N/A')}, Lon: {rec.get('lng', 'N/A')})")
-            
+
             # Add review section
             place_id = rec.get('place_id')
             if place_id:
                 # Check if user has already reviewed this place
                 try:
                     review_response = requests.get(
-                        f"http://localhost:8080/api/reviews/user/{place_id}",
+                        f"{BACKEND_URL}/api/reviews/user/{place_id}",
                         headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                     )
                     if review_response.status_code == 200:
@@ -349,12 +353,12 @@ def display_recommendation(rec):
                             st.markdown(f"Rating: {review_data['rating']} ⭐")
                             if review_data['comment']:
                                 st.markdown(f"Comment: {review_data['comment']}")
-                            
+
                             # Use session state to track if edit mode is active
                             edit_key = f"edit_mode_{place_id}"
                             if edit_key not in st.session_state:
                                 st.session_state[edit_key] = False
-                                
+
                             # Add edit button
                             if not st.session_state[edit_key]:
                                 if st.button("Edit Review", key=f"edit_review_{place_id}"):
@@ -365,7 +369,7 @@ def display_recommendation(rec):
                                 st.markdown("**Edit Your Review**")
                                 new_rating = st.slider("New Rating", 1.0, 5.0, review_data['rating'], 0.5, key=f"rating_{place_id}")
                                 new_comment = st.text_area("New Comment", review_data['comment'], key=f"comment_{place_id}")
-                                
+
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     if st.button("Cancel", key=f"cancel_{place_id}"):
@@ -376,13 +380,13 @@ def display_recommendation(rec):
                                         try:
                                             # First delete the existing review
                                             delete_response = requests.delete(
-                                                f"http://localhost:8080/api/reviews/{place_id}",
+                                                f"{BACKEND_URL}/api/reviews/{place_id}",
                                                 headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                                             )
-                                            
+
                                             # Then create a new review
                                             response = requests.post(
-                                                "http://localhost:8080/api/reviews/",
+                                                f"{BACKEND_URL}/api/reviews/",
                                                 json={
                                                     "place_id": place_id,
                                                     "rating": new_rating,
@@ -409,7 +413,7 @@ def display_recommendation(rec):
                                 if st.form_submit_button("Submit Review"):
                                     try:
                                         response = requests.post(
-                                            "http://localhost:8080/api/reviews/",
+                                            f"{BACKEND_URL}/api/reviews/",
                                             json={
                                                 "place_id": place_id,
                                                 "rating": rating,
@@ -434,7 +438,7 @@ def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, pro
     if not recommendations:
         st.warning("No recommendations available after filtering. Try adjusting your preferences or ratings.")
         return
-        
+
     recs_for_map = [{'row': rec} for rec in recommendations] if 'row' not in recommendations[0] else recommendations
 
     # Always apply RL optimization
@@ -444,12 +448,12 @@ def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, pro
         if (p.get("lat") if 'row' not in p else p['row'].get("lat")) is not None and
            (p.get("lng") if 'row' not in p else p['row'].get("lng")) is not None
     ]
-    
+
     if len(valid_recs) < 2:
         st.warning("Not enough valid locations to optimize a route. Showing individual locations instead.")
         show_map(recs_for_map, ors_key, profile=profile)
         return
-        
+
     try:
         rl_path = get_optimal_path(valid_recs, user_lat, user_lng)
         if rl_path:
@@ -491,21 +495,14 @@ BASE_PATH = "reco/planwise/" # Don't edit this path, streamlit app will break
 
 @st.cache_data
 def load_places():
-    if os.environ.get('ENV') == 'prod':
-        places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
-    else:
-        places = pd.read_csv("resources/combined_places.csv")
+    places = pd.read_csv("resources/combined_places.csv")
     places['types_processed'] = places['types'].apply(process_types)
     return places
 
 @st.cache_resource
 def load_autoencoder_models():
-    if os.environ.get('ENV') == 'prod':
-        auto_model = load_model(os.path.join(BASE_PATH, "models/autoencoder.h5"))
-        scaler = joblib.load(os.path.join(BASE_PATH, "models/scaler.save"))
-    else:
-        auto_model = load_model("models/autoencoder.h5")
-        scaler = joblib.load("models/scaler.save")
+    auto_model = load_model("models/autoencoder.h5")
+    scaler = joblib.load("models/scaler.save")
     return auto_model, scaler
 
 @st.cache_resource
@@ -598,7 +595,7 @@ if user_msg:
     headers = {"Authorization": f"Bearer {st.session_state.user_token}"}
     try:
         response = requests.post(
-            "http://localhost:8080/api/preferences/extract-preferences",
+            f"{BACKEND_URL}/api/preferences/extract-preferences",
             json={"text": user_msg},
             headers=headers
         )
@@ -609,20 +606,20 @@ if user_msg:
             else:
                 # Update saved preferences with new ones
                 st.session_state.saved_preferences.update(extracted_prefs)
-                
+
                 # Update the UI sliders and save to database
                 for cat, rating in extracted_prefs.items():
                     st.session_state[f"slider_{cat}"] = rating
                     st.session_state[f"chk_{cat}"] = True
                     try:
                         response = requests.post(
-                            "http://localhost:8080/api/preferences/",
+                            f"{BACKEND_URL}/api/preferences/",
                             json={"category": cat, "rating": rating},
                             headers=headers
                         )
                     except Exception as e:
                         st.error(f"Error saving preference for {cat}: {str(e)}")
-                
+
                 bot_reply = "Great! I've updated your preferences. You can adjust them below if needed."
         else:
             bot_reply = "Sorry, I couldn't process your preferences right now."
@@ -635,19 +632,19 @@ if user_msg:
 def get_user_inputs():
     input_ratings = []
     provided_mask = []
-    
+
     # Create columns for better layout
     cols = st.columns([1, 2])
     with cols[0]:
         st.write("**Select Categories**")
     with cols[1]:
         st.write("**Rate (0-5)**")
-    
+
     for cat in categories:
         # Initialize session state for this category if not exists
         if f"slider_{cat}" not in st.session_state:
             st.session_state[f"slider_{cat}"] = st.session_state.saved_preferences.get(cat, 0.0)
-        
+
         cols = st.columns([1, 2])
         with cols[0]:
             provide = st.checkbox(f"{cat}", value=cat in st.session_state.saved_preferences, key=f"chk_{cat}")
@@ -657,21 +654,21 @@ def get_user_inputs():
                 current_value = st.session_state[f"slider_{cat}"]
                 rating = st.slider(
                     label=cat,
-                    min_value=0.0, 
-                    max_value=5.0, 
-                    step=0.5, 
+                    min_value=0.0,
+                    max_value=5.0,
+                    step=0.5,
                     value=current_value,
                     key=f"slider_{cat}_{current_value}"
                 )
-                
+
                 # Update session state with new value
                 st.session_state[f"slider_{cat}"] = rating
-                
+
                 # Save preference to database if it's changed
                 if rating != st.session_state.saved_preferences.get(cat, 0.0):
                     try:
                         response = requests.post(
-                            "http://localhost:8080/api/preferences/",
+                            f"{BACKEND_URL}/api/preferences/",
                             json={"category": cat, "rating": rating},
                             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                         )
@@ -679,7 +676,7 @@ def get_user_inputs():
                             st.session_state.saved_preferences[cat] = rating
                     except Exception as e:
                         st.error(f"Error saving preference for {cat}: {str(e)}")
-                
+
                 input_ratings.append(rating)
                 provided_mask.append(True)
             else:
@@ -687,7 +684,7 @@ def get_user_inputs():
                 if cat in st.session_state.saved_preferences:
                     try:
                         response = requests.delete(
-                            f"http://localhost:8080/api/preferences/{cat}",
+                            f"{BACKEND_URL}/api/preferences/{cat}",
                             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                         )
                         if response.status_code == 200:
@@ -698,7 +695,7 @@ def get_user_inputs():
                         st.error(f"Error removing preference for {cat}: {str(e)}")
                 input_ratings.append(0.0)
                 provided_mask.append(False)
-    
+
     return np.array(input_ratings, dtype=np.float32).reshape(1, -1), np.array(provided_mask, dtype=bool).reshape(1, -1)
 
 input_ratings, provided_mask = get_user_inputs()
@@ -708,7 +705,7 @@ user_preferences_dict = {cat: float(st.session_state.get(f"slider_{cat}", 0.0)) 
 if st.button("Generate Recommendations"):
     # Store the current method
     st.session_state.current_method = method
-    
+
     # Load autoencoder models on-demand (needed for predictions regardless of method)
     if 'auto_model' not in st.session_state.models or 'scaler' not in st.session_state.models:
         with st.spinner("Loading autoencoder models..."):
@@ -718,7 +715,7 @@ if st.button("Generate Recommendations"):
     else:
         auto_model = st.session_state.models['auto_model']
         scaler = st.session_state.models['scaler']
-    
+
     # Compute predicted ratings using the autoencoder (for both methods)
     input_scaled = scaler.transform(input_ratings)
     predicted_scaled = auto_model.predict(input_scaled)
@@ -735,7 +732,7 @@ if st.button("Generate Recommendations"):
     # Depending on the method, load and call the corresponding recommender
     if method == "Autoencoder-Based":
         st.subheader("Autoencoder-Based Recommendations")
-        
+
         # Load or get the autoencoder recommender
         if 'autoencoder_recommender' not in st.session_state.models:
             with st.spinner("Initializing autoencoder recommender..."):
@@ -749,12 +746,12 @@ if st.button("Generate Recommendations"):
                 st.session_state.models['autoencoder_recommender'] = autoencoder_recommender
         else:
             autoencoder_recommender = st.session_state.models['autoencoder_recommender']
-        
+
         # Convert dictionary of preferences to array format and mask
         user_prefs_array = np.array([predicted_ratings_dict.get(cat, 0) for cat in categories])
-        provided_mask = np.array([cat in user_preferences_dict and user_preferences_dict[cat] > 0 
+        provided_mask = np.array([cat in user_preferences_dict and user_preferences_dict[cat] > 0
                                   for cat in categories])
-        
+
         recommendations = autoencoder_recommender.get_recommendations(
             user_lat=user_lat,
             user_lon=user_lng,
@@ -762,13 +759,13 @@ if st.button("Generate Recommendations"):
             provided_mask=provided_mask,
             num_recs=num_recs
         )
-        
+
         # Store recommendations in session state
         st.session_state.current_recommendations = recommendations if recommendations else None
-        
+
     elif method == "SVD-Based":
         st.subheader("SVD-Based Recommendations")
-        
+
         # Load or get the SVD recommender
         if 'svd_recommender' not in st.session_state.models:
             with st.spinner("Initializing SVD recommender..."):
@@ -779,26 +776,26 @@ if st.button("Generate Recommendations"):
                 st.session_state.models['svd_recommender'] = svd_recommender
         else:
             svd_recommender = st.session_state.models['svd_recommender']
-        
+
         with st.expander("SVD Model Evaluation Details"):
             eval_metrics = svd_recommender.evaluate_model(places)
             st.write(f"RMSE: {eval_metrics['rmse_mean']:.4f} (+/- {eval_metrics['rmse_std']:.4f})")
             st.write(f"MAE:  {eval_metrics['mae_mean']:.4f} (+/- {eval_metrics['mae_std']:.4f})")
-            
+
         recommendations = svd_recommender.get_recommendations(
-            df=places, 
-            user_lat=user_lat, 
-            user_lon=user_lng, 
-            predicted_ratings=predicted_ratings_dict, 
-            top_n=num_recs, 
+            df=places,
+            user_lat=user_lat,
+            user_lon=user_lng,
+            predicted_ratings=predicted_ratings_dict,
+            top_n=num_recs,
             max_distance=5
         )
         # Store recommendations in session state
         st.session_state.current_recommendations = recommendations
-        
+
     elif method == "Transfer-Based":
         st.subheader("Transfer-Based Recommendations")
-        
+
         # Load or get the transfer recommender
         if 'transfer_recommender' not in st.session_state.models:
             with st.spinner("Initializing transfer learning recommender (this may take a while)..."):
@@ -808,7 +805,7 @@ if st.button("Generate Recommendations"):
                 st.session_state.models['transfer_recommender'] = transfer_recommender
         else:
             transfer_recommender = st.session_state.models['transfer_recommender']
-        
+
         recommendations = transfer_recommender.get_recommendations(
             user_preferences=user_preferences_dict,
             user_lat=user_lat,
@@ -818,10 +815,10 @@ if st.button("Generate Recommendations"):
         )
         # Store recommendations in session state
         st.session_state.current_recommendations = recommendations
-        
+
     elif method == "Ensemble":
         st.subheader("Ensemble-Based Recommendations")
-        
+
         # Load or get the ensemble recommender
         if 'ensemble_recommender' not in st.session_state.models:
             with st.spinner("Initializing ensemble recommender..."):
@@ -835,7 +832,7 @@ if st.button("Generate Recommendations"):
                 st.session_state.models['ensemble_recommender'] = ensemble_recommender
         else:
             ensemble_recommender = st.session_state.models['ensemble_recommender']
-        
+
         recommendations = ensemble_recommender.get_recommendations(
             user_lat=user_lat,
             user_lon=user_lng,
@@ -846,10 +843,10 @@ if st.button("Generate Recommendations"):
         )
         # Store recommendations in session state
         st.session_state.current_recommendations = recommendations
-        
+
     elif method == "Embeddings-Based":
         st.subheader("Embeddings-Based Recommendations")
-        
+
         # Load or get the Madrid transfer recommender
         if 'madrid_transfer_recommender' not in st.session_state.models:
             with st.spinner("Initializing Madrid embeddings recommender..."):
@@ -857,7 +854,7 @@ if st.button("Generate Recommendations"):
                 st.session_state.models['madrid_transfer_recommender'] = madrid_transfer_recommender
         else:
             madrid_transfer_recommender = st.session_state.models['madrid_transfer_recommender']
-        
+
         recommendations = madrid_transfer_recommender.get_recommendations(
             user_lat=user_lat,
             user_lon=user_lng,
@@ -870,7 +867,7 @@ if st.button("Generate Recommendations"):
 if st.session_state.current_recommendations:
     method = st.session_state.current_method
     recommendations = st.session_state.current_recommendations
-    
+
     st.subheader(f"Top Place Recommendations ({method})")
     if recommendations:
         st.markdown("### Best Recommendation")
@@ -878,7 +875,7 @@ if st.session_state.current_recommendations:
         st.markdown("### Other Recommendations")
         for rec in recommendations[1:]:
             display_recommendation(rec)
-        
+
         # Show map
         st.subheader("Map View: Recommended Places & Optimized Route")
         optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile)
