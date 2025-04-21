@@ -2,8 +2,6 @@ import pandas as pd
 import numpy as np
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import cross_validate
-from surprise import accuracy
-from collections import defaultdict
 from math import radians, sin, cos, sqrt, atan2
 import os
 

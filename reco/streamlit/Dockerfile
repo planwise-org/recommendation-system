@@ -1,5 +1,5 @@
 # Use the official Python image as base
-FROM python:3.11
+FROM python:3.11-bullseye
 
 # Install build-essential for gcc and other build tools
 # RUN apt-get update && apt-get install -y build-essential
@@ -14,6 +14,12 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 
+# RUN apt-get update && apt-get install -y \
+# build-essential \
+# gcc-11 \
+# g++-11 \
+# libstdc++6 \
+# && apt-get clean
 
 RUN pip install --upgrade pip
 RUN pip install Cython "numpy<2.0.0" "scipy<=1.13.1" tqdm powerlaw
