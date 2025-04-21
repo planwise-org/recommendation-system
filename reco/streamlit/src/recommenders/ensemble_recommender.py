@@ -22,6 +22,7 @@ from .autoencoder_recommender import AutoencoderRecommender
 from .svd_recommender import SVDPlaceRecommender
 from .transfer_recommender import TransferRecommender
 from .madrid_transfer_recommender import MadridTransferRecommender
+import requests
 
 class EnsembleRecommender(BaseRecommender):
     """
@@ -236,70 +237,53 @@ class EnsembleRecommender(BaseRecommender):
         return recommendations
     
     def _standardize_recommendation(self, rec, source):
-        """
-        Standardize recommendation format from different recommenders.
-        
-        Args:
-            rec: Recommendation dictionary from a component recommender
-            source: Source recommender name
-            
-        Returns:
-            Standardized recommendation dictionary
-        """
-        # Extract place_id - some recommenders have it directly, others within 'row'
-        place_id = rec.get('place_id', '')
-        if not place_id and 'row' in rec:
-            place_id = rec['row'].get('place_id', '')
-            
-        # Extract category - sometimes it's a string, sometimes a list
-        category = rec.get('category', 'unknown')
-        if isinstance(category, list) and category:
-            category = category[0]
-            
-        # Create standardized recommendation
-        standard_rec = {
-            'place_id': place_id,
-            'name': rec.get('name', rec.get('row', {}).get('name', 'Unknown')),
+        """Standardize recommendation format across different models."""
+        return {
+            'place_id': rec.get('place_id', ''),
+            'name': rec.get('name', 'N/A'),
+            'icon': rec.get('icon', 'https://via.placeholder.com/80'),
+            'actual_rating': rec.get('rating', rec.get('actual_rating', 'N/A')),
+            'user_ratings_total': rec.get('user_ratings_total', 'N/A'),
+            'description': rec.get('description', 'No description available'),
             'score': rec.get('score', 0.0),
-            'category': category,
-            'rating': rec.get('rating', rec.get('row', {}).get('rating', 0.0)),
-            'user_ratings_total': rec.get('user_ratings_total', rec.get('row', {}).get('user_ratings_total', 0)),
             'distance': rec.get('distance', 0.0),
-            'lat': rec.get('lat', rec.get('row', {}).get('lat', 0.0)),
-            'lng': rec.get('lng', rec.get('row', {}).get('lng', 0.0)),
-            'vicinity': rec.get('vicinity', rec.get('row', {}).get('vicinity', '')),
-            'types': rec.get('types', rec.get('row', {}).get('types', '')),
-            'description': rec.get('description', rec.get('row', {}).get('description', '')),
-            'icon': rec.get('icon', rec.get('row', {}).get('icon', 'https://via.placeholder.com/80')),
+            'types': rec.get('types', 'N/A'),
+            'lat': rec.get('lat', None),
+            'lng': rec.get('lng', None),
+            'vicinity': rec.get('vicinity', 'N/A'),
             'source': source
         }
-        
-        return standard_rec
     
-    def get_recommendations(self, user_lat, user_lon, user_prefs, predicted_ratings_dict, num_recs=10):
+    def get_recommendations(self, user_lat, user_lon, user_prefs, predicted_ratings_dict, num_recs=10, user_token=None):
         """
         Get ensemble recommendations by combining multiple models.
-        
-        Args:
-            user_lat: User's latitude
-            user_lon: User's longitude
-            user_prefs: Dictionary of user category preferences
-            predicted_ratings_dict: Dictionary of predicted category ratings
-            num_recs: Number of recommendations to return
-            
-        Returns:
-            list: Ensemble recommendations
         """
-        # Reset category counter for each recommendation request
-        self.recommended_categories = defaultdict(int)
-        all_recommendations = []
+        # Get poorly rated places from user reviews
+        poorly_rated_places = set()
+        if user_token:
+            try:
+                response = requests.get(
+                    "http://localhost:8080/api/reviews/",
+                    headers={"Authorization": f"Bearer {user_token}"}
+                )
+                if response.status_code == 200:
+                    reviews = response.json()
+                    poorly_rated_places = {
+                        str(review['place_id']) 
+                        for review in reviews 
+                        if float(review['rating']) <= 2.0
+                    }
+                    print(f"Found {len(poorly_rated_places)} poorly rated places to filter out")
+            except Exception as e:
+                print(f"Error getting poorly rated places: {e}")
+
+        # Get more recommendations than needed to account for filtering
+        target_recs = num_recs * 3  # Get 3x the recommendations needed
         
-        # Store a reference to the places DataFrame for all recommenders to use
-        places_df = self.autoencoder_recommender.places_df if self.autoencoder_recommender else None
+        all_recommendations = []
         
         # Get recommendations from each model
         if self.autoencoder_recommender:
-            # Prepare input for autoencoder (needs array and mask)
             categories = list(predicted_ratings_dict.keys())
             user_prefs_array = np.array([predicted_ratings_dict.get(cat, 0) for cat in categories])
             provided_mask = np.array([cat in user_prefs and user_prefs[cat] > 0 for cat in categories])
@@ -309,76 +293,79 @@ class EnsembleRecommender(BaseRecommender):
                 user_lon=user_lon,
                 user_prefs=user_prefs_array,
                 provided_mask=provided_mask,
-                num_recs=num_recs
+                num_recs=target_recs
             )
-            auto_recs = self._normalize_scores(auto_recs)
-            all_recommendations.extend([
-                self._standardize_recommendation(rec, 'autoencoder') 
-                for rec in auto_recs
-            ])
+            if auto_recs:
+                auto_recs = self._normalize_scores(auto_recs)
+                all_recommendations.extend([
+                    self._standardize_recommendation(rec, 'autoencoder') 
+                    for rec in auto_recs
+                ])
+
+        if self.svd_recommender:
+            places_df = self.autoencoder_recommender.places_df if self.autoencoder_recommender else None
+            if places_df is not None:
+                svd_recs = self.svd_recommender.get_recommendations(
+                    df=places_df,
+                    user_lat=user_lat,
+                    user_lon=user_lon,
+                    predicted_ratings=predicted_ratings_dict,
+                    top_n=target_recs
+                )
+                if svd_recs:
+                    svd_recs = self._normalize_scores(svd_recs)
+                    all_recommendations.extend([
+                        self._standardize_recommendation(rec, 'svd') 
+                        for rec in svd_recs
+                    ])
+
+        if self.transfer_recommender:
+            places_df = self.autoencoder_recommender.places_df if self.autoencoder_recommender else None
+            if places_df is not None:
+                transfer_recs = self.transfer_recommender.get_recommendations(
+                    user_preferences=user_prefs,
+                    user_lat=user_lat,
+                    user_lon=user_lon,
+                    places_df=places_df,
+                    top_n=target_recs
+                )
+                if transfer_recs:
+                    transfer_recs = self._normalize_scores(transfer_recs)
+                    all_recommendations.extend([
+                        self._standardize_recommendation(rec, 'transfer') 
+                        for rec in transfer_recs
+                    ])
+
+        # Apply weights and filter poorly rated places
+        filtered_recommendations = []
+        seen_places = set()
         
-        if self.svd_recommender and places_df is not None:
-            svd_recs = self.svd_recommender.get_recommendations(
-                df=places_df,  # Use the shared places_df instead
-                user_lat=user_lat,
-                user_lon=user_lon,
-                predicted_ratings=predicted_ratings_dict,
-                top_n=num_recs,
-                max_distance=5  # Allow recommendations up to 5km away
-            )
-            svd_recs = self._normalize_scores(svd_recs)
-            all_recommendations.extend([
-                self._standardize_recommendation(rec, 'svd') 
-                for rec in svd_recs
-            ])
+        # Sort all recommendations by score
+        all_recommendations.sort(key=lambda x: x.get('score', 0), reverse=True)
         
-        if self.transfer_recommender and places_df is not None:
-            transfer_recs = self.transfer_recommender.get_recommendations(
-                user_preferences=user_prefs,
-                user_lat=user_lat,
-                user_lon=user_lon,
-                places_df=places_df,  # Use the shared places_df
-                top_n=num_recs
-            )
-            transfer_recs = self._normalize_scores(transfer_recs)
-            all_recommendations.extend([
-                self._standardize_recommendation(rec, 'transfer') 
-                for rec in transfer_recs
-            ])
-            
-        if self.madrid_transfer_recommender:
-            madrid_recs = self.madrid_transfer_recommender.get_recommendations(
-                user_lat=user_lat,
-                user_lon=user_lon,
-                user_prefs=user_prefs,
-                num_recs=num_recs
-            )
-            madrid_recs = self._normalize_scores(madrid_recs)
-            all_recommendations.extend([
-                self._standardize_recommendation(rec, 'madrid_transfer') 
-                for rec in madrid_recs
-            ])
-            
-        # Apply weights based on source
+        # Filter and add recommendations until we have enough
         for rec in all_recommendations:
+            place_id = str(rec.get('place_id', ''))
+            
+            # Skip if this place was rated poorly or we've already seen it
+            if not place_id or place_id in poorly_rated_places or place_id in seen_places:
+                continue
+            
+            # Apply source weight
             source = rec.get('source', '')
             weight = self.weights.get(source, 1.0)
             rec['score'] *= weight
             
-        # Apply adjustments for better recommendations
-        all_recommendations = self._apply_distance_penalty(all_recommendations, max_distance=5.0)
-        all_recommendations = self._apply_diversity_boost(all_recommendations, max_per_category=2)
-        all_recommendations = self._apply_novelty_boost(all_recommendations)
+            # Add to filtered recommendations
+            filtered_recommendations.append(rec)
+            seen_places.add(place_id)
+            
+            # Break if we have enough recommendations
+            if len(filtered_recommendations) >= num_recs:
+                break
         
-        # Remove duplicates by place_id
-        unique_places = {}
-        for rec in all_recommendations:
-            place_id = rec.get('place_id', '')
-            if place_id and (place_id not in unique_places or rec['score'] > unique_places[place_id]['score']):
-                unique_places[place_id] = rec
-                
-        # Sort by final score and return top recommendations
-        final_recommendations = sorted(unique_places.values(), key=lambda x: x['score'], reverse=True)
+        # Sort final recommendations by score
+        filtered_recommendations.sort(key=lambda x: x.get('score', 0), reverse=True)
         
-        # Return only requested number of recommendations
-        return final_recommendations[:num_recs]
+        print(f"Generated {len(filtered_recommendations)} recommendations after filtering {len(poorly_rated_places)} poorly rated places")
+        return filtered_recommendations[:num_recs]
