@@ -16,7 +16,6 @@ import pydeck as pdk
 
 # Network and routing
 import networkx as nx
-from openrouteservice import convert
 
 # HTTP requests
 import requests  # For calling the API
