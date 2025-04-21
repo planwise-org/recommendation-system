@@ -19,10 +19,10 @@ Our ensemble combines model outputs using a weighted fusion approach:
 
 We assign the following default weights, tuned through iterative testing:
 
-- **20%** Autoencoder (general user preferences)
-- **20%** SVD (popular, highly-rated places)
-- **30%** California Transfer Learning (cross-regional semantic matching)
-- **30%** Madrid Embedding Recommender (local real-time personalization)
+- **10%** Autoencoder (general user preferences)
+- **10%** SVD (popular, highly-rated places)
+- **40%** California Transfer Learning (cross-regional semantic matching)
+- **40%** Madrid Embedding Recommender (local real-time personalization)
 
 These weights balance the strengths of each model:
 - The autoencoder captures complex preference patterns

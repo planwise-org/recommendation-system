@@ -7,3 +7,83 @@ github:
   is_project_page: true
   repository_url: https://github.com/planwise-org/recommendation-system
   repository_name: planwise 
+
+# Navigation structure
+navigation:
+  - title: Overview
+    children:
+      - title: Architecture
+        url: /overview/architecture
+      - title: Business Value
+        url: /overview/business-value
+      - title: Project Management
+        url: /overview/project-management
+
+  - title: Data
+    children:
+      - title: Datasets
+        url: /data/datasets
+      - title: Preprocessing
+        url: /data/preprocessing
+      - title: Exploratory Data Analysis
+        url: /data/eda
+
+  - title: Models
+    children:
+      - title: Ensemble
+        url: /models/ensemble
+      - title: Autoencoder
+        url: /models/autoencoder
+      - title: SVD
+        url: /models/svd
+      - title: Transfer Learning
+        url: /models/transfer-learning
+      - title: Madrid Embeddings
+        url: /models/madrid-embeddings
+
+  - title: Interfaces
+    children:
+      - title: Streamlit App
+        url: /interfaces/streamlit-app
+      - title: Chatbot
+        url: /interfaces/chatbot
+
+  - title: API
+    children:
+      - title: Overview
+        url: /api/overview
+      - title: Endpoints
+        url: /api/endpoints
+      - title: Authentication
+        url: /api/authentication
+      - title: Deployment
+        url: /api/deployment
+
+  - title: Development
+    children:
+      - title: Environment Setup
+        url: /development/environment-setup
+      - title: Contribution Guide
+        url: /development/contribution-guide
+      - title: Code Quality
+        url: /development/code-quality
+
+  - title: Testing
+    children:
+      - title: Overview
+        url: /testing/overview
+      - title: Unit Tests
+        url: /testing/unit-tests
+      - title: Integration Tests
+        url: /testing/integration-tests
+
+  - title: Deployment
+    children:
+      - title: CI/CD
+        url: /deployment/ci-cd
+      - title: MLOps
+        url: /deployment/mlops
+      - title: Database
+        url: /deployment/database
+      - title: Security
+        url: /deployment/security
