@@ -26,7 +26,7 @@ regex==2023.12.25
 python-multipart==0.0.9
 vaderSentiment==3.3.2
 tf-keras==2.19.0
-cornac
+cornac==1.15.2
 
 # Note: After installing requirements, run:
 # python -m spacy download en_core_web_sm
