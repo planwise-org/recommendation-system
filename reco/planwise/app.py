@@ -52,11 +52,15 @@ if 'current_method' not in st.session_state:
 if 'models' not in st.session_state:
     st.session_state.models = {}
 
+
+
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8080')
+
 def login_user(username: str, password: str):
     try:
         # First check if user exists
         check_user = requests.get(
-            f"http://localhost:8080/api/users/{username}/exists",
+            f"{BACKEND_URL}/api/users/{username}/exists",
             headers={"Content-Type": "application/json"}
         )
         if check_user.status_code == 404:
@@ -65,7 +69,7 @@ def login_user(username: str, password: str):
 
         # Try to login
         response = requests.post(
-            "http://localhost:8080/api/token",
+            f"{BACKEND_URL}/api/token",
             data={"username": username, "password": password}
         )
         if response.status_code == 200:
@@ -88,7 +92,7 @@ def login_user(username: str, password: str):
 def register_user(username: str, password: str):
     try:
         response = requests.post(
-            "http://localhost:8080/api/users/",
+            f"{BACKEND_URL}/api/users/",
             json={
                 "username": username,
                 "password": password,
@@ -143,7 +147,7 @@ if st.session_state.user_token:
     try:
         # Load preferences
         pref_response = requests.get(
-            "http://localhost:8080/api/preferences/",
+            f"{BACKEND_URL}/api/preferences/",
             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
         )
         if pref_response.status_code == 200:
@@ -158,7 +162,7 @@ if st.session_state.user_token:
 
         # Load reviews
         review_response = requests.get(
-            "http://localhost:8080/api/reviews/",
+            f"{BACKEND_URL}/api/reviews/",
             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
         )
         if review_response.status_code == 200:
@@ -339,7 +343,7 @@ def display_recommendation(rec):
                 # Check if user has already reviewed this place
                 try:
                     review_response = requests.get(
-                        f"http://localhost:8080/api/reviews/user/{place_id}",
+                        f"{BACKEND_URL}/api/reviews/user/{place_id}",
                         headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                     )
                     if review_response.status_code == 200:
@@ -376,13 +380,13 @@ def display_recommendation(rec):
                                         try:
                                             # First delete the existing review
                                             delete_response = requests.delete(
-                                                f"http://localhost:8080/api/reviews/{place_id}",
+                                                f"{BACKEND_URL}/api/reviews/{place_id}",
                                                 headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                                             )
 
                                             # Then create a new review
                                             response = requests.post(
-                                                "http://localhost:8080/api/reviews/",
+                                                f"{BACKEND_URL}/api/reviews/",
                                                 json={
                                                     "place_id": place_id,
                                                     "rating": new_rating,
@@ -409,7 +413,7 @@ def display_recommendation(rec):
                                 if st.form_submit_button("Submit Review"):
                                     try:
                                         response = requests.post(
-                                            "http://localhost:8080/api/reviews/",
+                                            f"{BACKEND_URL}/api/reviews/",
                                             json={
                                                 "place_id": place_id,
                                                 "rating": rating,
@@ -598,7 +602,7 @@ if user_msg:
     headers = {"Authorization": f"Bearer {st.session_state.user_token}"}
     try:
         response = requests.post(
-            "http://localhost:8080/api/preferences/extract-preferences",
+            f"{BACKEND_URL}/api/preferences/extract-preferences",
             json={"text": user_msg},
             headers=headers
         )
@@ -616,7 +620,7 @@ if user_msg:
                     st.session_state[f"chk_{cat}"] = True
                     try:
                         response = requests.post(
-                            "http://localhost:8080/api/preferences/",
+                            f"{BACKEND_URL}/api/preferences/",
                             json={"category": cat, "rating": rating},
                             headers=headers
                         )
@@ -671,7 +675,7 @@ def get_user_inputs():
                 if rating != st.session_state.saved_preferences.get(cat, 0.0):
                     try:
                         response = requests.post(
-                            "http://localhost:8080/api/preferences/",
+                            f"{BACKEND_URL}/api/preferences/",
                             json={"category": cat, "rating": rating},
                             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                         )
@@ -687,7 +691,7 @@ def get_user_inputs():
                 if cat in st.session_state.saved_preferences:
                     try:
                         response = requests.delete(
-                            f"http://localhost:8080/api/preferences/{cat}",
+                            f"{BACKEND_URL}/api/preferences/{cat}",
                             headers={"Authorization": f"Bearer {st.session_state.user_token}"}
                         )
                         if response.status_code == 200:
