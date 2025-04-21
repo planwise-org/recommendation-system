@@ -18,7 +18,3 @@ torch==2.2.0
 requests==2.31.0
 sentence-transformers==4.1.0
 tf-keras==2.19.0
-
-
-# Note: After installing requirements, run:
-# python -m spacy download en_core_web_sm

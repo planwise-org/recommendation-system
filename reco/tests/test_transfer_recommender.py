@@ -10,14 +10,10 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Add streamlit directory to path to allow imports from there
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('streamlit')))
-
-# Mock streamlit before importing it
-import streamlit as st
-st.session_state = {}
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('planwise')))
 
 # Now import the module
-from streamlit.src.recommenders.transfer_recommender import TransferRecommender
+from planwise.src.recommenders.transfer_recommender import TransferRecommender
 
 class TestTransferRecommender(unittest.TestCase):
     
@@ -91,7 +87,7 @@ class TestTransferRecommender(unittest.TestCase):
         embedding = self.recommender._preferences_to_embedding({})
         self.assertEqual(embedding.shape, (self.recommender.embedding_dim,))
     
-    @patch('streamlit.src.recommenders.transfer_recommender.TransferRecommender._preferences_to_embedding')
+    @patch('planwise.src.recommenders.transfer_recommender.TransferRecommender._preferences_to_embedding')
     def test_get_recommendations(self, mock_pref_to_embedding):
         """Test recommendation generation."""
         # Mock the preferences to embedding function

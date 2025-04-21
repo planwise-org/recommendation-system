@@ -11,14 +11,10 @@ from unittest.mock import patch, MagicMock, Mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Add streamlit directory to path to allow imports from there
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('streamlit')))
-
-# Mock streamlit before importing it
-import streamlit as st
-st.session_state = {}
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('planwise')))
 
 # Now import after adding the path
-from streamlit.src.recommenders.autoencoder_recommender import AutoencoderRecommender
+from planwise.src.recommenders.autoencoder_recommender import AutoencoderRecommender
 
 # Define helper functions here instead of importing them
 def haversine(lat1, lon1, lat2, lon2):
@@ -121,11 +117,11 @@ class TestAutoencoderRecommender(unittest.TestCase):
         self.provided_mask = np.array([True, True, False, True])
         
         # Create a patch for the places global variable
-        self.places_patch = patch('streamlit.src.recommenders.autoencoder_recommender.places', self.test_df)
+        self.places_patch = patch('planwise.src.recommenders.autoencoder_recommender.places', self.test_df)
         self.mock_places = self.places_patch.start()
         
         # Create a patch for the categories global variable
-        self.categories_patch = patch('streamlit.src.recommenders.autoencoder_recommender.categories', self.categories)
+        self.categories_patch = patch('planwise.src.recommenders.autoencoder_recommender.categories', self.categories)
         self.mock_categories = self.categories_patch.start()
         
         # Create a mock for category_to_place_types
@@ -135,13 +131,13 @@ class TestAutoencoderRecommender(unittest.TestCase):
             "restaurants": ["restaurant"],
             "cafes": ["cafe"]
         }
-        self.category_patch = patch('streamlit.src.recommenders.autoencoder_recommender.category_to_place_types', self.category_to_place_types)
+        self.category_patch = patch('planwise.src.recommenders.autoencoder_recommender.category_to_place_types', self.category_to_place_types)
         self.mock_category = self.category_patch.start()
         
         # Create a mock for auto_model and scaler
-        self.model_patch = patch('streamlit.src.recommenders.autoencoder_recommender.auto_model')
+        self.model_patch = patch('planwise.src.recommenders.autoencoder_recommender.auto_model')
         self.mock_model = self.model_patch.start()
-        self.scaler_patch = patch('streamlit.src.recommenders.autoencoder_recommender.scaler')
+        self.scaler_patch = patch('planwise.src.recommenders.autoencoder_recommender.scaler')
         self.mock_scaler = self.scaler_patch.start()
         
         # Configure the mocks
@@ -160,7 +156,7 @@ class TestAutoencoderRecommender(unittest.TestCase):
         self.model_patch.stop()
         self.scaler_patch.stop()
     
-    @patch('streamlit.src.recommenders.autoencoder_recommender.AutoencoderRecommender.haversine')
+    @patch('planwise.src.recommenders.autoencoder_recommender.AutoencoderRecommender.haversine')
     def test_get_recommendations(self, mock_haversine):
         """Test the get_recommendations method."""
         # Configure the mock haversine function
