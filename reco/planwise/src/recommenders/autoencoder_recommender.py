@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import math
 from .base_recommender import BaseRecommender
-import joblib
 
 # Assuming these are defined elsewhere and will be passed to the recommender
 # from the app.py initialization
@@ -21,12 +20,12 @@ class AutoencoderRecommender(BaseRecommender):
     A recommender that uses an autoencoder neural network to learn
     user preferences and recommend places.
     """
-    
-    def __init__(self, auto_model=None, scaler=None, places_df=None, 
+
+    def __init__(self, auto_model=None, scaler=None, places_df=None,
                  categories_list=None, category_mappings=None):
         """
         Initialize the autoencoder recommender.
-        
+
         Args:
             auto_model: The trained autoencoder model
             scaler: The scaler used for normalizing the inputs
@@ -39,7 +38,7 @@ class AutoencoderRecommender(BaseRecommender):
         self.places_df = places_df
         self.categories = categories_list
         self.category_to_place_types = category_mappings
-        
+
     def haversine(self, lat1, lon1, lat2, lon2):
         """Compute distance (in meters) between two lat/lon points."""
         R = 6371000  # Earth's radius in meters
@@ -54,14 +53,14 @@ class AutoencoderRecommender(BaseRecommender):
     def get_recommendations(self, user_lat, user_lon, user_prefs, provided_mask, num_recs=5):
         """
         Get place recommendations based on user preferences and location.
-        
+
         Args:
             user_lat: User's latitude
             user_lon: User's longitude
             user_prefs: Array of user preference ratings
             provided_mask: Mask indicating which preferences were explicitly provided
             num_recs: Number of recommendations to return
-            
+
         Returns:
             list: Recommended places
         """
@@ -71,10 +70,10 @@ class AutoencoderRecommender(BaseRecommender):
         _places_df = self.places_df if self.places_df is not None else places
         _categories = self.categories or categories
         _category_to_place_types = self.category_to_place_types or category_to_place_types
-        
+
         if _auto_model is None or _scaler is None or _places_df is None or _categories is None:
             raise ValueError("Model, scaler, places data, and categories must be provided")
-            
+
         # Reconstruct predicted ratings
         input_scaled = _scaler.transform([user_prefs])
         predicted_scaled = _auto_model.predict(input_scaled)
@@ -147,4 +146,4 @@ class AutoencoderRecommender(BaseRecommender):
             'icon': r['row'].get('icon', ''),
             'user_ratings_total': r['row']['user_ratings_total'],
             'distance': r['distance']
-        } for r in final_recs[:num_recs]] 
+        } for r in final_recs[:num_recs]]

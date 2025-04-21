@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from collections import defaultdict
 import requests
-
+import os
 from .base_recommender import BaseRecommender
 from .autoencoder_recommender import AutoencoderRecommender
 from .svd_recommender import SVDPlaceRecommender
@@ -145,7 +145,8 @@ class EnsembleRecommender(BaseRecommender):
         if not token:
             return bad
         try:
-            resp = requests.get("http://localhost:8080/api/reviews/",
+            BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8080')
+            resp = requests.get(f"{BACKEND_URL}/api/reviews/",
                                 headers={"Authorization":f"Bearer {token}"})
             if resp.status_code==200:
                 for rev in resp.json():
