@@ -129,6 +129,7 @@ class EnsembleRecommender(BaseRecommender):
             'name': rec.get('name',rec.get('row',{}).get('name','Unknown')),
             'score': rec.get('score',0.0),
             'category': cat,
+            'icon': rec.get('icon', 'https://via.placeholder.com/80'),
             'rating': rec.get('rating',rec.get('row',{}).get('rating',0.0)),
             'user_ratings_total': rec.get('user_ratings_total',rec.get('row',{}).get('user_ratings_total',0)),
             'distance': rec.get('distance',0.0),
