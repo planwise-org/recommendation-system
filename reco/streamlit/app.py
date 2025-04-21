@@ -404,7 +404,8 @@ def load_models():
 def load_madrid_transfer_recommender():
     recommender = MadridTransferRecommender(
         embedding_model_name='all-MiniLM-L6-v2',
-        embedding_path='models/madrid_place_embeddings.npz'
+        madrid_emb_path='models/madrid_place_embeddings.npz',
+        ca_user_emb_path='models/user_embeddings.npz'
     )
     return recommender
 
