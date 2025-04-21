@@ -804,7 +804,8 @@ if st.button("Generate Recommendations"):
             user_lon=user_lng,
             user_prefs=user_preferences_dict,
             predicted_ratings_dict=predicted_ratings_dict,
-            num_recs=num_recs
+            num_recs=num_recs,
+            user_token=st.session_state.user_token
         )
         # Store recommendations in session state
         st.session_state.current_recommendations = recommendations
