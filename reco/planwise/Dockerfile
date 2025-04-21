@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && apt-get clean
 
-RUN apt-get install -y libstdc++6
+RUN apt-get install -y g++ libstdc++6
 
 RUN pip install --upgrade pip
 RUN pip install Cython "numpy<2.0.0" "scipy<=1.13.1" tqdm powerlaw
