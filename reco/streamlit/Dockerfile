@@ -11,7 +11,24 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     libxext6 \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    gcc-11 \
+    g++-11 \
+    libstdc++6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# RUN apt-get update && apt-get install -y \
+#     build-essential \
+    # gcc-11 \
+    # g++-11 \
+    # libstdc++6 \
+    # wget \
+    # curl \
+    # && apt-get clean
+
+# Set gcc to use the newer version (optional, helpful if compiling code)
+# ENV CC=gcc-11
+# ENV CXX=g++-11
 
 
 # RUN apt-get update && apt-get install -y \
