@@ -226,7 +226,7 @@ def main():
         "zoo": 4.5,
         "supermarket": 0.0
     }
-    BASE_PATH = "reco/streamlit/"
+    BASE_PATH = "reco/planwise/"
     if os.environ.get("ENV") == "prod":
         df = pd.read_csv(BASE_PATH + 'combined_places.csv')
     else:

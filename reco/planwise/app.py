@@ -33,6 +33,7 @@ from src.recommenders import (
 # Path optimization
 from pathway import get_optimal_path
 from pathway import reorder_with_tsp
+
 # Initialize session state for user authentication
 if 'user_token' not in st.session_state:
     st.session_state.user_token = None
@@ -48,6 +49,8 @@ if 'current_recommendations' not in st.session_state:
     st.session_state.current_recommendations = None
 if 'current_method' not in st.session_state:
     st.session_state.current_method = None
+if 'models' not in st.session_state:
+    st.session_state.models = {}
 
 def login_user(username: str, password: str):
     try:
@@ -484,7 +487,7 @@ def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, pro
 # ---------------------------
 # Update load_resources to include type processing
 
-BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
+BASE_PATH = "reco/planwise/" # Don't edit this path, streamlit app will break
 
 @st.cache_data
 def load_places():
@@ -496,7 +499,7 @@ def load_places():
     return places
 
 @st.cache_resource
-def load_models():
+def load_autoencoder_models():
     if os.environ.get('ENV') == 'prod':
         auto_model = load_model(os.path.join(BASE_PATH, "models/autoencoder.h5"))
         scaler = joblib.load(os.path.join(BASE_PATH, "models/scaler.save"))
@@ -504,6 +507,8 @@ def load_models():
         auto_model = load_model("models/autoencoder.h5")
         scaler = joblib.load("models/scaler.save")
     return auto_model, scaler
+
+@st.cache_resource
 def load_madrid_transfer_recommender():
     recommender = MadridTransferRecommender(
         embedding_model_name='all-MiniLM-L6-v2',
@@ -511,9 +516,7 @@ def load_madrid_transfer_recommender():
     )
     return recommender
 
-madrid_transfer_recommender = load_madrid_transfer_recommender()
-# Load resources separately
-auto_model, scaler = load_models()
+# Load places data - we always need this
 places = load_places()
 
 # ---------------------------
@@ -559,33 +562,8 @@ category_to_place_types = {
     "supermarket": ["supermarket", "grocery_or_supermarket"]
 }
 
-# Initialize recommenders - create instances here for later use 
-# (instead of defining classes in app.py)
-autoencoder_recommender = AutoencoderRecommender(
-    auto_model=auto_model,
-    scaler=scaler,
-    places_df=places,
-    categories_list=categories,
-    category_mappings=category_to_place_types
-)
-
-svd_recommender = SVDPlaceRecommender(
-    category_to_place_types=category_to_place_types
-)
-svd_recommender.fit(places)
-
-transfer_recommender = TransferRecommender()
-transfer_recommender.train_base_model()
-transfer_recommender.transfer_to_places(places)
-
-# Initialize the ensemble recommender
-ensemble_recommender = EnsembleRecommender()
-ensemble_recommender.initialize_models(
-    auto_model=auto_model,
-    scaler=scaler,
-    places_df=places,
-    category_to_place_types=category_to_place_types
-)
+# Remove the instantiation of all recommenders at startup
+# We'll create them on-demand when needed
 
 # ---------------------------
 # Chat & UI Setup
@@ -731,6 +709,16 @@ if st.button("Generate Recommendations"):
     # Store the current method
     st.session_state.current_method = method
     
+    # Load autoencoder models on-demand (needed for predictions regardless of method)
+    if 'auto_model' not in st.session_state.models or 'scaler' not in st.session_state.models:
+        with st.spinner("Loading autoencoder models..."):
+            auto_model, scaler = load_autoencoder_models()
+            st.session_state.models['auto_model'] = auto_model
+            st.session_state.models['scaler'] = scaler
+    else:
+        auto_model = st.session_state.models['auto_model']
+        scaler = st.session_state.models['scaler']
+    
     # Compute predicted ratings using the autoencoder (for both methods)
     input_scaled = scaler.transform(input_ratings)
     predicted_scaled = auto_model.predict(input_scaled)
@@ -740,14 +728,27 @@ if st.button("Generate Recommendations"):
     final_predictions[provided_mask[0]] = input_ratings[0][provided_mask[0]]
     predicted_ratings_dict = {cat: final_predictions[i] for i, cat in enumerate(categories)}
 
-
     with st.expander("Show Predicted Category Ratings"):
         for cat, rating in predicted_ratings_dict.items():
             st.write(f"**{cat}:** {rating:.2f}")
 
-    # Depending on the method, call the corresponding recommender
+    # Depending on the method, load and call the corresponding recommender
     if method == "Autoencoder-Based":
         st.subheader("Autoencoder-Based Recommendations")
+        
+        # Load or get the autoencoder recommender
+        if 'autoencoder_recommender' not in st.session_state.models:
+            with st.spinner("Initializing autoencoder recommender..."):
+                autoencoder_recommender = AutoencoderRecommender(
+                    auto_model=auto_model,
+                    scaler=scaler,
+                    places_df=places,
+                    categories_list=categories,
+                    category_mappings=category_to_place_types
+                )
+                st.session_state.models['autoencoder_recommender'] = autoencoder_recommender
+        else:
+            autoencoder_recommender = st.session_state.models['autoencoder_recommender']
         
         # Convert dictionary of preferences to array format and mask
         user_prefs_array = np.array([predicted_ratings_dict.get(cat, 0) for cat in categories])
@@ -767,6 +768,18 @@ if st.button("Generate Recommendations"):
         
     elif method == "SVD-Based":
         st.subheader("SVD-Based Recommendations")
+        
+        # Load or get the SVD recommender
+        if 'svd_recommender' not in st.session_state.models:
+            with st.spinner("Initializing SVD recommender..."):
+                svd_recommender = SVDPlaceRecommender(
+                    category_to_place_types=category_to_place_types
+                )
+                svd_recommender.fit(places)
+                st.session_state.models['svd_recommender'] = svd_recommender
+        else:
+            svd_recommender = st.session_state.models['svd_recommender']
+        
         with st.expander("SVD Model Evaluation Details"):
             eval_metrics = svd_recommender.evaluate_model(places)
             st.write(f"RMSE: {eval_metrics['rmse_mean']:.4f} (+/- {eval_metrics['rmse_std']:.4f})")
@@ -785,6 +798,17 @@ if st.button("Generate Recommendations"):
         
     elif method == "Transfer-Based":
         st.subheader("Transfer-Based Recommendations")
+        
+        # Load or get the transfer recommender
+        if 'transfer_recommender' not in st.session_state.models:
+            with st.spinner("Initializing transfer learning recommender (this may take a while)..."):
+                transfer_recommender = TransferRecommender()
+                transfer_recommender.train_base_model()
+                transfer_recommender.transfer_to_places(places)
+                st.session_state.models['transfer_recommender'] = transfer_recommender
+        else:
+            transfer_recommender = st.session_state.models['transfer_recommender']
+        
         recommendations = transfer_recommender.get_recommendations(
             user_preferences=user_preferences_dict,
             user_lat=user_lat,
@@ -797,7 +821,20 @@ if st.button("Generate Recommendations"):
         
     elif method == "Ensemble":
         st.subheader("Ensemble-Based Recommendations")
-        # Combine predictions from all models with predefined weights
+        
+        # Load or get the ensemble recommender
+        if 'ensemble_recommender' not in st.session_state.models:
+            with st.spinner("Initializing ensemble recommender..."):
+                ensemble_recommender = EnsembleRecommender()
+                ensemble_recommender.initialize_models(
+                    auto_model=auto_model,
+                    scaler=scaler,
+                    places_df=places,
+                    category_to_place_types=category_to_place_types
+                )
+                st.session_state.models['ensemble_recommender'] = ensemble_recommender
+        else:
+            ensemble_recommender = st.session_state.models['ensemble_recommender']
         
         recommendations = ensemble_recommender.get_recommendations(
             user_lat=user_lat,
@@ -812,6 +849,15 @@ if st.button("Generate Recommendations"):
         
     elif method == "Embeddings-Based":
         st.subheader("Embeddings-Based Recommendations")
+        
+        # Load or get the Madrid transfer recommender
+        if 'madrid_transfer_recommender' not in st.session_state.models:
+            with st.spinner("Initializing Madrid embeddings recommender..."):
+                madrid_transfer_recommender = load_madrid_transfer_recommender()
+                st.session_state.models['madrid_transfer_recommender'] = madrid_transfer_recommender
+        else:
+            madrid_transfer_recommender = st.session_state.models['madrid_transfer_recommender']
+        
         recommendations = madrid_transfer_recommender.get_recommendations(
             user_lat=user_lat,
             user_lon=user_lng,

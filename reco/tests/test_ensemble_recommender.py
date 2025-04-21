@@ -12,12 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # Add streamlit directory to path to allow imports from there
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('streamlit')))
 
-# Mock streamlit before importing it
-import streamlit as st
-st.session_state = {}
 
 # Now import the module
-from streamlit.src.recommenders.ensemble_recommender import EnsembleRecommender
+from planwise.src.recommenders.ensemble_recommender import EnsembleRecommender
 
 class TestEnsembleRecommender(unittest.TestCase):
     """Test suite for the EnsembleRecommender class."""
@@ -80,7 +77,7 @@ class TestEnsembleRecommender(unittest.TestCase):
         ]
 
         # Patch the transfer recommender import
-        self.transfer_recommender_patch = patch('streamlit.src.ensemble.TransferRecommender')
+        self.transfer_recommender_patch = patch('planwise.src.ensemble.TransferRecommender')
         self.mock_transfer_recommender = self.transfer_recommender_patch.start()
     
     def tearDown(self):
@@ -123,9 +120,9 @@ class TestEnsembleRecommender(unittest.TestCase):
         # Test that distance from point to itself is 0
         self.assertEqual(self.recommender.haversine(lat1, lon1, lat1, lon1), 0)
     
-    @patch('streamlit.src.recommenders.ensemble_recommender.EnsembleRecommender._get_autoencoder_recommendations')
-    @patch('streamlit.src.recommenders.ensemble_recommender.EnsembleRecommender._get_svd_recommendations')
-    @patch('streamlit.src.recommenders.ensemble_recommender.EnsembleRecommender._get_transfer_recommendations')
+    @patch('planwise.src.recommenders.ensemble_recommender.EnsembleRecommender._get_autoencoder_recommendations')
+    @patch('planwise.src.recommenders.ensemble_recommender.EnsembleRecommender._get_svd_recommendations')
+    @patch('planwise.src.recommenders.ensemble_recommender.EnsembleRecommender._get_transfer_recommendations')
     def test_get_recommendations(self, mock_transfer, mock_svd, mock_auto):
         """Test the main recommendation function."""
         # Configure the mocks to return our test recommendations
@@ -165,9 +162,9 @@ class TestEnsembleRecommender(unittest.TestCase):
         if place1:
             self.assertTrue(set(place1['sources']).issuperset({'autoencoder', 'svd'}))
     
-    @patch('streamlit.src.recommenders.ensemble_recommender.EnsembleRecommender._get_autoencoder_recommendations')
-    @patch('streamlit.src.recommenders.ensemble_recommender.EnsembleRecommender._get_svd_recommendations')
-    @patch('streamlit.src.recommenders.ensemble_recommender.EnsembleRecommender._get_transfer_recommendations')
+    @patch('planwise.src.recommenders.ensemble_recommender.EnsembleRecommender._get_autoencoder_recommendations')
+    @patch('planwise.src.recommenders.ensemble_recommender.EnsembleRecommender._get_svd_recommendations')
+    @patch('planwise.src.recommenders.ensemble_recommender.EnsembleRecommender._get_transfer_recommendations')
     def test_empty_recommendations(self, mock_transfer, mock_svd, mock_auto):
         """Test behavior with empty recommendation lists."""
         # Configure the mocks to return empty lists
