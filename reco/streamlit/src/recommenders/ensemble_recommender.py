@@ -9,6 +9,7 @@ from .base_recommender import BaseRecommender
 from .autoencoder_recommender import AutoencoderRecommender
 from .svd_recommender import SVDPlaceRecommender
 from .transfer_recommender import TransferRecommender
+from .madrid_transfer_recommender import MadridTransferRecommender
 
 class EnsembleRecommender(BaseRecommender):
     """
@@ -28,7 +29,7 @@ class EnsembleRecommender(BaseRecommender):
     5. Ranking based on the combined ensemble score
     """
     
-    def __init__(self, weights=None):
+    def __init__(self):
         """
         Initialize the ensemble recommender with optional weights for each model.
         
@@ -37,10 +38,11 @@ class EnsembleRecommender(BaseRecommender):
                 Example: {'autoencoder': 0.4, 'svd': 0.3, 'transfer': 0.3}
                 If None, equal weights will be used.
         """
-        self.weights = weights or {'autoencoder': 0.33, 'svd': 0.33, 'transfer': 0.34}
+        self.weights = {'autoencoder': 0.25, 'svd': 0.25,'transfer': 0.25, 'madrid_transfer': 0.25}
         self.autoencoder_recommender = None
         self.svd_recommender = None
         self.transfer_recommender = None
+        self.madrid_transfer_recommender = None 
         self.places_df = None
         self.max_distance = 2000  # meters
         self.category_to_place_types = None
@@ -74,6 +76,10 @@ class EnsembleRecommender(BaseRecommender):
         self.transfer_recommender = TransferRecommender()
         self.transfer_recommender.train_base_model()
         self.transfer_recommender.transfer_to_places(places_df)
+
+        self.madrid_transfer_recommender = MadridTransferRecommender()
+        self.madrid_transfer_recommender.train_base_model()
+        self.madrid_transfer_recommender.transfer_to_places(places_df)
     
     def haversine(self, lat1, lon1, lat2, lon2):
         """Compute distance (in meters) between two lat/lon points."""
@@ -129,11 +135,13 @@ class EnsembleRecommender(BaseRecommender):
         auto_recs = self._get_autoencoder_recommendations(user_lat, user_lon, user_prefs, num_recs*2)
         svd_recs = self._get_svd_recommendations(user_lat, user_lon, predicted_ratings_dict, num_recs*2)
         transfer_recs = self._get_transfer_recommendations(user_lat, user_lon, predicted_ratings_dict, num_recs*2)
+        madrid_recs = self._get_madrid_transfer_recommendations(user_lat, user_lon, predicted_ratings_dict, num_recs*2)
         
         # Convert all recommendations to a consistent format and normalize scores
         auto_recs = self._normalize_scores(auto_recs)
         svd_recs = self._normalize_scores(svd_recs)
         transfer_recs = self._normalize_scores(transfer_recs)
+        madrid_recs = self._normalize_scores(madrid_recs)
         
         # Assign source information
         for rec in auto_recs:
@@ -142,9 +150,11 @@ class EnsembleRecommender(BaseRecommender):
             rec['source'] = 'svd'
         for rec in transfer_recs:
             rec['source'] = 'transfer'
+        for rec in madrid_recs:
+            rec['source'] = 'madrid_transfer'
         
         # Combine all recommendations
-        all_recs = auto_recs + svd_recs + transfer_recs
+        all_recs = auto_recs + svd_recs + transfer_recs + madrid_recs
         
         # Create a dictionary to deduplicate by place_id or name
         unique_recs = {}
@@ -242,3 +252,18 @@ class EnsembleRecommender(BaseRecommender):
         except Exception as e:
             print(f"Error in transfer recommendations: {e}")
             return [] 
+    
+    def _get_madrid_transfer_recommendations(self, user_lat, user_lon, predicted_ratings_dict, num_recs):
+        if self.madrid_transfer_recommender is None:
+            return []
+        try:
+            return self.madrid_transfer_recommender.get_recommendations(
+                user_preferences=predicted_ratings_dict,
+                user_lat=user_lat,
+                user_lon=user_lon,
+                places_df=self.places_df,
+                top_n=num_recs
+            )
+        except Exception as e:
+            print(f"Error in MadridTransferRecommender: {e}")
+            return []

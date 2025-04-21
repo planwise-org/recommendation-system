@@ -500,22 +500,22 @@ profile = st.sidebar.selectbox(
 )
 
 # Add ensemble weights if ensemble method is selected
-if method == "Ensemble":
-    st.sidebar.subheader("Ensemble Weights")
-    auto_weight = st.sidebar.slider("Autoencoder Weight", 0.0, 1.0, 0.33, 0.01)
-    svd_weight = st.sidebar.slider("SVD Weight", 0.0, 1.0, 0.33, 0.01)
-    transfer_weight = st.sidebar.slider("Transfer Learning Weight", 0.0, 1.0, 0.34, 0.01)
-    # Normalize weights to ensure they sum to 1
-    total_weight = auto_weight + svd_weight + transfer_weight
-    if total_weight > 0:
-        auto_weight = auto_weight / total_weight
-        svd_weight = svd_weight / total_weight
-        transfer_weight = transfer_weight / total_weight
-    ensemble_weights = {
-        'autoencoder': auto_weight,
-        'svd': svd_weight,
-        'transfer': transfer_weight
-    }
+# if method == "Ensemble":
+#     st.sidebar.subheader("Ensemble Weights")
+#     auto_weight = st.sidebar.slider("Autoencoder Weight", 0.0, 1.0, 0.33, 0.01)
+#     svd_weight = st.sidebar.slider("SVD Weight", 0.0, 1.0, 0.33, 0.01)
+#     transfer_weight = st.sidebar.slider("Transfer Learning Weight", 0.0, 1.0, 0.34, 0.01)
+#     # Normalize weights to ensure they sum to 1
+#     total_weight = auto_weight + svd_weight + transfer_weight
+#     if total_weight > 0:
+#         auto_weight = auto_weight / total_weight
+#         svd_weight = svd_weight / total_weight
+#         transfer_weight = transfer_weight / total_weight
+#     ensemble_weights = {
+#         'autoencoder': auto_weight,
+#         'svd': svd_weight,
+#         'transfer': transfer_weight
+#     }
 
 num_recs = 5
 
@@ -713,12 +713,12 @@ if st.button("Generate Recommendations"):
     elif method == "Ensemble":
         st.subheader("Ensemble-Based Recommendations")
         # Update weights if they were customized
-        custom_weights = {
-            'autoencoder': auto_weight,
-            'svd': svd_weight,
-            'transfer': transfer_weight
-        }
-        ensemble_recommender.weights = custom_weights
+        # custom_weights = {
+        #     'autoencoder': auto_weight,
+        #     'svd': svd_weight,
+        #     'transfer': transfer_weight
+        # }
+        # ensemble_recommender.weights = custom_weights
         
         recommendations = ensemble_recommender.get_recommendations(
             user_lat=user_lat,
