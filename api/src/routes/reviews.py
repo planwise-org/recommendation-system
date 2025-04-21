@@ -5,6 +5,7 @@ from ..models import Review
 from ..schemas.review import ReviewCreate, ReviewRead, ReviewUpdate
 from ..database import get_session
 from ..services.auth import get_current_user
+from datetime import datetime
 
 router = APIRouter()
 
@@ -14,6 +15,24 @@ def create_review(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_session)
 ):
+    # Check if user already has a review for this place
+    existing_review = db.exec(
+        select(Review)
+        .where(Review.user_id == current_user.id)
+        .where(Review.place_id == review.place_id)
+    ).first()
+
+    if existing_review:
+        # Update existing review
+        existing_review.rating = review.rating
+        existing_review.comment = review.comment
+        existing_review.updated_at = datetime.utcnow()
+        db.add(existing_review)
+        db.commit()
+        db.refresh(existing_review)
+        return existing_review
+
+    # Create new review if none exists
     db_review = Review(
         user_id=current_user.id,
         place_id=review.place_id,
