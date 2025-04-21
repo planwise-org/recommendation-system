@@ -5,7 +5,6 @@ from sqlmodel import Session
 from datetime import timedelta
 from .database import engine, get_session
 from .models import User
-from .schemas.user import UserRead
 from .services.auth import (
     authenticate_user,
     create_access_token,
@@ -13,7 +12,6 @@ from .services.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from .routes import users, places, reviews, recommendations, preferences
-from .database import init_db
 import logging
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text

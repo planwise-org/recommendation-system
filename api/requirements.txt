@@ -1,28 +1,28 @@
+
+# Api dependencies
 fastapi==0.115.6
 sqlmodel==0.0.22
 alembic==1.14.1
 SQLAlchemy==2.0.36
 uvicorn==0.32.1
-pydantic==2.10.3
 pydantic[email]==2.10.3
-psycopg2-binary
-asyncpg
-passlib
-jose==1.0.0
+psycopg2-binary==2.9.9
+asyncpg==0.29.0
+passlib==1.7.4
 python-jose==3.3.0
 pytest==8.3.5
 pytest-env==1.1.5
 pytest-asyncio==0.26.0
 httpx==0.28.1
-supabase
+supabase==2.15.0
+
+# Model dependencies
 python-multipart==0.0.12
-email-validator==2.1.0.post1
-numpy==1.26.4
-scikit-learn==1.4.1.post1
-pandas==2.2.1
+numpy==2.2.5 # keep latest version of numpy
+scikit-learn==1.6.1 # keep latest version of scikit-learn
+pandas==2.2.3 # keep latest version of pandas
 python-dotenv==1.0.1
 PyYAML==6.0.1
-supabase==2.15.0
-bcrypt
+bcrypt==4.1.2
 spacy==3.8.5
 textblob==0.17.1
