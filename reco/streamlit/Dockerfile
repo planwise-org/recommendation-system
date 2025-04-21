@@ -33,7 +33,7 @@ RUN pip install --upgrade pip \
 RUN python -m spacy download en_core_web_sm
 
 # Copy the application code
-# COPY . .
+COPY . .
 
 # Expose the FastAPI port
 # EXPOSE 8501
