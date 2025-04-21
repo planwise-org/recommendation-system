@@ -568,7 +568,7 @@ category_to_place_types = {
 st.sidebar.header("User Settings")
 user_lat = st.sidebar.number_input("Latitude", value=40.4168, format="%.4f")
 user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
-ors_key = st.secrets.get("ORS_API_KEY", "")
+ors_key = os.environ.get("ORS_API_KEY", "")
 method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Embeddings-Based", "Ensemble"])
 profile = st.sidebar.selectbox(
     "Routing Profile",
