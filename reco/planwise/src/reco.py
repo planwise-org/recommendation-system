@@ -224,11 +224,8 @@ def main():
         "zoo": 4.5,
         "supermarket": 0.0
     }
-    BASE_PATH = "reco/planwise/"
-    if os.environ.get("ENV") == "prod":
-        df = pd.read_csv(BASE_PATH + 'combined_places.csv')
-    else:
-        df = pd.read_csv('combined_places.csv')
+
+    df = pd.read_csv('resources/combined_places.csv')
 
     recommender = SVDPlaceRecommender()
 

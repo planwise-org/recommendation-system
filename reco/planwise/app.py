@@ -495,21 +495,14 @@ BASE_PATH = "reco/planwise/" # Don't edit this path, streamlit app will break
 
 @st.cache_data
 def load_places():
-    if os.environ.get('ENV') == 'prod':
-        places = pd.read_csv(os.path.join(BASE_PATH, "resources/combined_places.csv"))
-    else:
-        places = pd.read_csv("resources/combined_places.csv")
+    places = pd.read_csv("resources/combined_places.csv")
     places['types_processed'] = places['types'].apply(process_types)
     return places
 
 @st.cache_resource
 def load_autoencoder_models():
-    if os.environ.get('ENV') == 'prod':
-        auto_model = load_model(os.path.join(BASE_PATH, "models/autoencoder.h5"))
-        scaler = joblib.load(os.path.join(BASE_PATH, "models/scaler.save"))
-    else:
-        auto_model = load_model("models/autoencoder.h5")
-        scaler = joblib.load("models/scaler.save")
+    auto_model = load_model("models/autoencoder.h5")
+    scaler = joblib.load("models/scaler.save")
     return auto_model, scaler
 
 @st.cache_resource
