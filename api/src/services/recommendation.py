@@ -77,6 +77,15 @@ def autoencoder_recommendations(
     ]
     if not available_places:
         return []
+    
+    # Get user's reviewed places
+    user_reviews = db.exec(select(Review).where(Review.user_id == user_id)).all()
+    reviewed_place_ids = {review.place_id for review in user_reviews}
+
+    # Filter out places the user has already reviewed
+    available_places = [place for place in places if place.id not in reviewed_place_ids]
+    if not available_places:
+        return []
 
     # Get average ratings for each place
     place_ratings = {}
