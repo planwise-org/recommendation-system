@@ -1,5 +1,3 @@
-# Python version requirement
-python_version >= "3.10,<=3.12"
 
 # Core dependencies
 recommenders==1.2.1
