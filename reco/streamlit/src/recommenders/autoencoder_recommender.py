@@ -68,7 +68,7 @@ class AutoencoderRecommender(BaseRecommender):
         # Use global model and data if not provided during initialization
         _auto_model = self.auto_model or auto_model
         _scaler = self.scaler or scaler
-        _places_df = self.places_df or places
+        _places_df = self.places_df if self.places_df is not None else places
         _categories = self.categories or categories
         _category_to_place_types = self.category_to_place_types or category_to_place_types
         
