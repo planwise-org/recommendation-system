@@ -49,9 +49,32 @@ def autoencoder_recommendations(
     # Get user's reviewed places
     user_reviews = db.exec(select(Review).where(Review.user_id == user_id)).all()
     reviewed_place_ids = {review.place_id for review in user_reviews}
+    
+    # Create a dictionary of user's ratings for each place type
+    place_type_ratings = {}
+    poorly_rated_place_types = set()  # Track place types that user rated poorly
+    for review in user_reviews:
+        place = db.get(Place, review.place_id)
+        if place.place_type not in place_type_ratings:
+            place_type_ratings[place.place_type] = []
+        place_type_ratings[place.place_type].append(review.rating)
+        
+        # If user rated this place poorly (1 or 2 stars), add its type to poorly_rated_place_types
+        if review.rating <= 2:
+            poorly_rated_place_types.add(place.place_type)
 
-    # Filter out places the user has already reviewed
-    available_places = [place for place in places if place.id not in reviewed_place_ids]
+    # Calculate average rating for each place type
+    place_type_avg_ratings = {
+        place_type: sum(ratings) / len(ratings)
+        for place_type, ratings in place_type_ratings.items()
+    }
+
+    # Filter out places the user has already reviewed and places of poorly rated types
+    available_places = [
+        place for place in places 
+        if place.id not in reviewed_place_ids 
+        and place.place_type not in poorly_rated_place_types
+    ]
     if not available_places:
         return []
 
@@ -59,14 +82,22 @@ def autoencoder_recommendations(
     place_ratings = {}
     for place in available_places:
         place_reviews = db.exec(select(Review).where(Review.place_id == place.id)).all()
+        
+        # Base score from all reviews
         if place_reviews:
             avg_rating = sum(review.rating for review in place_reviews) / len(place_reviews)
             place_ratings[place.id] = avg_rating / 5.0  # Normalize to 0-1 range
         else:
             place_ratings[place.id] = 0.5  # Default score for places with no reviews
+            
+        # Adjust score based on user's preferences for this place type
+        if place.place_type in place_type_avg_ratings:
+            user_type_preference = place_type_avg_ratings[place.place_type] / 5.0  # Normalize to 0-1
+            # Combine the base score with user's preference for this type
+            place_ratings[place.id] = 0.7 * place_ratings[place.id] + 0.3 * user_type_preference
 
     # Sort places by rating
-    sorted_places = sorted(available_places, key=lambda p: place_ratings[p.id], reverse=True)
+    sorted_places = sorted(available_places, key=lambda p: place_ratings.get(p.id, 0), reverse=True)
 
     # Take top N places
     n_recommendations = min(n_recommendations, len(sorted_places))

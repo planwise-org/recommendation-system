@@ -200,6 +200,7 @@ def euclidean_distance(p1, p2):
 def show_map(recs, ors_key, profile="foot-walking"):
     """Display an interactive PyDeck map with an optimized route and text labels."""
     if not recs:
+        st.warning("No recommendations to display on the map.")
         return
 
     import openrouteservice
@@ -220,6 +221,33 @@ def show_map(recs, ors_key, profile="foot-walking"):
         'lat': lats,
         'lon': lons
     })
+    
+    # If there's only one location, just show it without route optimization
+    if len(map_df) == 1:
+        text_layer = pdk.Layer(
+            "TextLayer",
+            data=map_df,
+            get_position='[lon, lat]',
+            get_text='name',
+            get_color='[255, 255, 255, 255]',
+            get_size=16,
+            get_angle=0,
+            anchor='middle'
+        )
+        view_state = pdk.ViewState(
+            latitude=map_df['lat'].mean(),
+            longitude=map_df['lon'].mean(),
+            zoom=14,
+            pitch=0,
+        )
+        deck = pdk.Deck(
+            layers=[text_layer],
+            initial_view_state=view_state,
+            tooltip={"text": "{name}"}
+        )
+        st.pydeck_chart(deck)
+        return
+        
     route_coords = None
     if not map_df.empty:
         if ors_key and ors_key != "":
@@ -232,14 +260,19 @@ def show_map(recs, ors_key, profile="foot-walking"):
                 st.error(f"Routing API error: {e}")
                 route_coords = None
         if route_coords is None:
-            G = nx.complete_graph(len(map_df))
-            coords = map_df[['lat', 'lon']].values
-            for i, j in G.edges():
-                G[i][j]['weight'] = euclidean_distance((coords[i][0], coords[i][1]),
-                                                        (coords[j][0], coords[j][1]))
-            tsp_route = nx.approximation.traveling_salesman_problem(G, weight='weight')
-            optimized_data = map_df.iloc[tsp_route].reset_index(drop=True)
-            route_coords = optimized_data[['lon', 'lat']].values.tolist()
+            try:
+                G = nx.complete_graph(len(map_df))
+                coords = map_df[['lat', 'lon']].values
+                for i, j in G.edges():
+                    G[i][j]['weight'] = euclidean_distance((coords[i][0], coords[i][1]),
+                                                            (coords[j][0], coords[j][1]))
+                tsp_route = nx.approximation.traveling_salesman_problem(G, weight='weight')
+                optimized_data = map_df.iloc[tsp_route].reset_index(drop=True)
+                route_coords = optimized_data[['lon', 'lat']].values.tolist()
+            except Exception as e:
+                st.error(f"Route optimization error: {e}")
+                # Fall back to simple display without route
+                route_coords = None
         else:
             optimized_data = map_df.copy()
         
@@ -253,14 +286,21 @@ def show_map(recs, ors_key, profile="foot-walking"):
             get_angle=0,
             anchor='middle'
         )
-        path_layer = pdk.Layer(
-            "PathLayer",
-            data=[{"path": route_coords}],
-            get_path="path",
-            get_color="[0, 0, 255]",
-            width_scale=20,
-            width_min_pixels=3,
-        )
+        
+        layers = [text_layer]
+        
+        # Only add path layer if we have route coordinates
+        if route_coords:
+            path_layer = pdk.Layer(
+                "PathLayer",
+                data=[{"path": route_coords}],
+                get_path="path",
+                get_color="[0, 0, 255]",
+                width_scale=20,
+                width_min_pixels=3,
+            )
+            layers.append(path_layer)
+            
         view_state = pdk.ViewState(
             latitude=optimized_data['lat'].mean(),
             longitude=optimized_data['lon'].mean(),
@@ -268,7 +308,7 @@ def show_map(recs, ors_key, profile="foot-walking"):
             pitch=0,
         )
         deck = pdk.Deck(
-            layers=[path_layer, text_layer],
+            layers=layers,
             initial_view_state=view_state,
             tooltip={"text": "{name}"}
         )
@@ -306,6 +346,58 @@ def display_recommendation(rec):
                             st.markdown(f"Rating: {review_data['rating']} ⭐")
                             if review_data['comment']:
                                 st.markdown(f"Comment: {review_data['comment']}")
+                            
+                            # Use session state to track if edit mode is active
+                            edit_key = f"edit_mode_{place_id}"
+                            if edit_key not in st.session_state:
+                                st.session_state[edit_key] = False
+                                
+                            # Add edit button
+                            if not st.session_state[edit_key]:
+                                if st.button("Edit Review", key=f"edit_review_{place_id}"):
+                                    st.session_state[edit_key] = True
+                                    st.rerun()
+                            else:
+                                # Show edit form
+                                st.markdown("**Edit Your Review**")
+                                new_rating = st.slider("New Rating", 1.0, 5.0, review_data['rating'], 0.5, key=f"rating_{place_id}")
+                                new_comment = st.text_area("New Comment", review_data['comment'], key=f"comment_{place_id}")
+                                
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    if st.button("Cancel", key=f"cancel_{place_id}"):
+                                        st.session_state[edit_key] = False
+                                        st.rerun()
+                                with col2:
+                                    if st.button("Update Review", key=f"update_{place_id}"):
+                                        try:
+                                            # First delete the existing review
+                                            delete_response = requests.delete(
+                                                f"http://localhost:8080/api/reviews/{place_id}",
+                                                headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                                            )
+                                            
+                                            # Then create a new review
+                                            response = requests.post(
+                                                "http://localhost:8080/api/reviews/",
+                                                json={
+                                                    "place_id": place_id,
+                                                    "rating": new_rating,
+                                                    "comment": new_comment
+                                                },
+                                                headers={"Authorization": f"Bearer {st.session_state.user_token}"}
+                                            )
+                                            if response.status_code in [200, 201]:
+                                                st.success("Review updated successfully!")
+                                                st.session_state[edit_key] = False
+                                                # Force a rerun to refresh the UI
+                                                st.rerun()
+                                            else:
+                                                st.error(f"Failed to update review. Status code: {response.status_code}")
+                                                if response.text:
+                                                    st.error(f"Error details: {response.text}")
+                                        except Exception as e:
+                                            st.error(f"Error updating review: {str(e)}")
                         else:
                             with st.form(f"review_form_{place_id}"):
                                 st.markdown("**Write a Review**")
@@ -324,6 +416,7 @@ def display_recommendation(rec):
                                         )
                                         if response.status_code in [200, 201]:
                                             st.success("Review submitted successfully!")
+                                            # Force a rerun to refresh the UI
                                             st.rerun()
                                         else:
                                             st.error(f"Failed to submit review. Status code: {response.status_code}")
@@ -335,6 +428,10 @@ def display_recommendation(rec):
                     st.error(f"Error loading review data: {str(e)}")
 
 def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, profile):
+    if not recommendations:
+        st.warning("No recommendations available after filtering. Try adjusting your preferences or ratings.")
+        return
+        
     recs_for_map = [{'row': rec} for rec in recommendations] if 'row' not in recommendations[0] else recommendations
 
     # Always apply RL optimization
@@ -344,6 +441,12 @@ def optimize_and_display_route(recommendations, user_lat, user_lng, ors_key, pro
         if (p.get("lat") if 'row' not in p else p['row'].get("lat")) is not None and
            (p.get("lng") if 'row' not in p else p['row'].get("lng")) is not None
     ]
+    
+    if len(valid_recs) < 2:
+        st.warning("Not enough valid locations to optimize a route. Showing individual locations instead.")
+        show_map(recs_for_map, ors_key, profile=profile)
+        return
+        
     try:
         rl_path = get_optimal_path(valid_recs, user_lat, user_lng)
         if rl_path:
@@ -738,6 +841,7 @@ if st.button("Generate Recommendations"):
             num_recs=num_recs
         )
         st.session_state.current_recommendations = recommendations
+
 # After the Generate Recommendations button section, add this code to display recommendations
 if st.session_state.current_recommendations:
     method = st.session_state.current_method
