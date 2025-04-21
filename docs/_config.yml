@@ -1,0 +1,9 @@
+theme: jekyll-theme-cayman
+title: Planwise Documentation
+description: Documentation for the Planwise personalized recommendation system
+show_downloads: false
+google_analytics:
+github:
+  is_project_page: true
+  repository_url: https://github.com/planwise-org/recommendation-system
+  repository_name: planwise 
