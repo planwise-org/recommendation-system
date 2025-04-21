@@ -1,5 +1,17 @@
 """
-Ensemble recommender that combines multiple recommendation models.
+EnsembleRecommender: A hybrid recommendation system that merges outputs from multiple models 
+to deliver more accurate, diverse, and robust place suggestions.
+
+Models included:
+- Autoencoder-based model: Captures latent user preferences through deep learning
+- SVD-based model: Uses collaborative filtering via matrix factorization
+- Transfer learning model: Leverages external domain knowledge for cross-domain insights
+
+Key Features:
+- Normalizes and combines scores from each model
+- De-duplicates overlapping recommendations
+- Applies weighted averaging to compute ensemble scores
+- Designed for flexibility and modular model integration
 """
 
 import numpy as np
