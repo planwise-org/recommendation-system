@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Add the streamlit directory to the path
-streamlit_dir = str(Path(__file__).resolve().parent.parent.joinpath('streamlit'))
+streamlit_dir = str(Path(__file__).resolve().parent.parent.joinpath('planwise'))
 sys.path.insert(0, streamlit_dir)
 
 def run_tests():

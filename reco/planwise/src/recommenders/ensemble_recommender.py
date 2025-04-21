@@ -23,10 +23,10 @@ class EnsembleRecommender(BaseRecommender):
 
     def __init__(self, weights=None):
         self.weights = weights or {
-            'autoencoder': 0.20,
-            'svd': 0.20,
-            'transfer': 0.30,
-            'madrid_transfer': 0.30
+            'autoencoder': 0.10,
+            'svd': 0.10,
+            'transfer': 0.40,
+            'madrid_transfer': 0.40
         }
         self.autoencoder_recommender = None
         self.svd_recommender = None

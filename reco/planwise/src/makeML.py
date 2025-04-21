@@ -145,7 +145,7 @@ plt.show()
 # 6) Save the underlying base_model + scaler
 # ---------------------------
 
-BASE_PATH = "reco/streamlit/" # Don't edit this path, streamlit app will break
+BASE_PATH = "reco/planwise/" # Don't edit this path, streamlit app will break
 os.makedirs(BASE_PATH, exist_ok=True)  # Ensure the directory exists
 
 

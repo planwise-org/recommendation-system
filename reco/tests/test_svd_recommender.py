@@ -10,14 +10,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Add streamlit directory to path to allow imports from there
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('streamlit')))
-
-# Mock streamlit before importing it
-import streamlit as st
-st.session_state = {}
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('planwise')))
 
 # Now import the module
-from streamlit.src.recommenders.svd_recommender import SVDPlaceRecommender
+from planwise.src.recommenders.svd_recommender import SVDPlaceRecommender
 
 class TestSVDPlaceRecommender(unittest.TestCase):
     
