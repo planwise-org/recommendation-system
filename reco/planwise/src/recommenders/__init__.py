@@ -9,6 +9,7 @@ from .transfer_recommender import TransferRecommender
 from .ensemble_recommender import EnsembleRecommender
 from .base_recommender import BaseRecommender
 from .madrid_transfer_recommender import MadridTransferRecommender
+from .meta_learner_ensemble import MetaEnsembleRecommender
 
 __all__ = [
     'BaseRecommender',
@@ -16,5 +17,6 @@ __all__ = [
     'SVDPlaceRecommender',
     'TransferRecommender',
     'EnsembleRecommender',
-    'MadridTransferRecommender'
+    'MadridTransferRecommender',
+    'MetaEnsembleRecommender'
 ] 
