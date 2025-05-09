@@ -27,7 +27,8 @@ from src.recommenders import (
     SVDPlaceRecommender,
     TransferRecommender,
     EnsembleRecommender,
-    MadridTransferRecommender
+    MadridTransferRecommender,
+    MetaEnsembleRecommender
 )
 
 # Path optimization
@@ -569,7 +570,7 @@ st.sidebar.header("User Settings")
 user_lat = st.sidebar.number_input("Latitude", value=40.4168, format="%.4f")
 user_lng = st.sidebar.number_input("Longitude", value=-3.7038, format="%.4f")
 ors_key = os.environ.get("ORS_API_KEY", "")
-method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Embeddings-Based", "Ensemble"])
+method = st.sidebar.selectbox("Method", ["Autoencoder-Based", "SVD-Based", "Transfer-Based", "Embeddings-Based", "Ensemble", "Meta-Learner Ensemble"])
 profile = st.sidebar.selectbox(
     "Routing Profile",
     options=["foot-walking", "driving-car"],
@@ -842,6 +843,33 @@ if st.button("Generate Recommendations"):
             user_token=st.session_state.user_token
         )
         # Store recommendations in session state
+        st.session_state.current_recommendations = recommendations
+
+    elif method == "Meta-Learner Ensemble":
+        st.subheader("Meta-Learner Ensemble Recommendations")
+
+        # Load or get the meta-learner ensemble recommender
+        if 'meta_ensemble_recommender' not in st.session_state.models:
+            with st.spinner("Initializing meta-learner ensemble recommender..."):
+                meta_ensemble_recommender = MetaEnsembleRecommender()
+                meta_ensemble_recommender.initialize_models(
+                    auto_model=auto_model,
+                    scaler=scaler,
+                    places_df=places,
+                    category_to_place_types=category_to_place_types
+                )
+                st.session_state.models['meta_ensemble_recommender'] = meta_ensemble_recommender
+        else:
+            meta_ensemble_recommender = st.session_state.models['meta_ensemble_recommender']
+
+        recommendations = meta_ensemble_recommender.get_recommendations(
+            user_lat=user_lat,
+            user_lon=user_lng,
+            user_prefs=user_preferences_dict,
+            predicted_ratings_dict=predicted_ratings_dict,
+            num_recs=num_recs,
+            user_token=st.session_state.user_token
+        )
         st.session_state.current_recommendations = recommendations
 
     elif method == "Embeddings-Based":

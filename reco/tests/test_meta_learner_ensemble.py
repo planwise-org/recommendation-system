@@ -1,25 +1,25 @@
 import unittest
 import pandas as pd
-import math
 from unittest.mock import patch, MagicMock, Mock
 
 # Now import the module
-from planwise.src.recommenders import EnsembleRecommender
+from planwise.src.recommenders import MetaEnsembleRecommender
 
-class TestEnsembleRecommender(unittest.TestCase):
-    """Test suite for the EnsembleRecommender class."""
+class TestMetaEnsembleRecommender(unittest.TestCase):
+    """Test suite for the MetaEnsembleRecommender class."""
     
     def setUp(self):
         """Set up test fixtures before each test method."""
         # Create custom weights for testing
         self.weights = {
-            'autoencoder': 0.4,
-            'svd': 0.3,
-            'transfer': 0.3
+            'autoencoder': 0.25,
+            'svd': 0.25,
+            'transfer': 0.25,
+            'madrid_transfer': 0.25
         }
         
         # Create the recommender instance with custom weights
-        self.recommender = EnsembleRecommender(weights=self.weights)
+        self.recommender = MetaEnsembleRecommender(weights=self.weights)
         
         # Create a simple mock dataframe for testing
         self.test_df = pd.DataFrame({
@@ -66,20 +66,11 @@ class TestEnsembleRecommender(unittest.TestCase):
             {'place_id': '3', 'name': 'Place 3', 'score': 0.65, 'lat': 40.415764, 'lng': -3.704532, 'distance': 800}
         ]
 
-        # Define the haversine function for testing
-        def haversine(lat1, lon1, lat2, lon2):
-            R = 6371000  # Earth's radius in meters
-            phi1 = math.radians(lat1)
-            phi2 = math.radians(lat2)
-            dphi = math.radians(lat2 - lat1)
-            dlambda = math.radians(lon2 - lon1)
-            a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-            return R * c
-        
-        # Attach haversine function to recommender for testing
-        self.haversine = haversine
-    
+        self.madrid_transfer_recs = [
+            {'place_id': '5', 'name': 'Place 5', 'score': 0.95, 'lat': 40.412123, 'lng': -3.702789, 'distance': 2000},
+            {'place_id': '2', 'name': 'Place 2', 'score': 0.85, 'lat': 40.417891, 'lng': -3.701234, 'distance': 1500}
+        ]
+
     def test_normalize_scores(self):
         """Test the score normalization function."""
         # Test with regular recommendations
@@ -101,51 +92,101 @@ class TestEnsembleRecommender(unittest.TestCase):
         # Test with single item
         single_rec = [{'place_id': '1', 'name': 'Place 1', 'score': 0.85}]
         normalized = self.recommender._normalize_scores(single_rec)
-        # A single item should get a score in the middle of the range
         if len(normalized) > 0:
             self.assertTrue(0 <= normalized[0]['score'] <= 1)
-    
-    def test_distance_calculation(self):
-        """Test distance calculations."""
-        lat1, lon1 = 40.416775, -3.703790  # Madrid center
-        lat2, lon2 = 40.417891, -3.701234  # Near location
-        
-        # Apply distance penalty to recommendations
+
+    def test_distance_penalty(self):
+        """Test the distance penalty application."""
         recs = self.auto_recs.copy()
+        # Store original scores before applying penalty
+        for rec in recs:
+            rec['original_score'] = rec['score']
+            
         penalized = self.recommender._apply_distance_penalty(recs)
         
         # Check that distance factors are applied
         for rec in penalized:
             self.assertTrue('distance_factor' in rec)
             self.assertTrue(0 < rec['distance_factor'] <= 1.0)
-    
-    @patch('planwise.src.recommenders.ensemble_recommender.EnsembleRecommender.initialize_models')
-    @patch('planwise.src.recommenders.AutoencoderRecommender.get_recommendations')
-    @patch('planwise.src.recommenders.SVDPlaceRecommender.get_recommendations')
-    @patch('planwise.src.recommenders.TransferRecommender.get_recommendations')
-    @patch('planwise.src.recommenders.MadridTransferRecommender.get_recommendations')
-    def test_get_recommendations(self, mock_madrid, mock_transfer, mock_svd, mock_auto, mock_init):
-        """Test the main recommendation function."""
-        # Configure mocks
-        mock_auto.return_value = self.auto_recs
-        mock_svd.return_value = self.svd_recs
-        mock_transfer.return_value = self.transfer_recs
-        mock_madrid.return_value = []
+            # Check that scores are reduced by distance
+            self.assertLessEqual(rec['score'], rec['original_score'])
+
+    def test_diversity_boost(self):
+        """Test the diversity boost application."""
+        recs = self.auto_recs.copy()
+        for r in recs:
+            r['category'] = 'restaurant'  # Set same category for testing
         
-        # Setup recommender
+        boosted = self.recommender._apply_diversity_boost(recs)
+        
+        # Check that scores are adjusted for diversity
+        self.assertGreater(boosted[0]['score'], boosted[1]['score'])
+
+    def test_novelty_boost(self):
+        """Test the novelty boost application."""
+        recs = [
+            {'score': 0.8, 'user_ratings_total': 5},  # Low reviews
+            {'score': 0.8, 'user_ratings_total': 100}  # High reviews
+        ]
+        
+        boosted = self.recommender._apply_novelty_boost(recs)
+        
+        # Check that low-review items get a boost
+        self.assertGreater(boosted[0]['score'], boosted[1]['score'])
+        self.assertTrue('novelty_boost' in boosted[0])
+
+    def test_metalearner_training(self):
+        """Test the metalearner training functionality."""
+        # Create mock user feedback
+        user_feedback = [
+            {
+                'place_id': '1',
+                'rating': 4.5,
+                'source_predictions': {
+                    'autoencoder': 0.8,
+                    'svd': 0.7,
+                    'transfer': 0.75,
+                    'madrid_transfer': 0.85
+                }
+            },
+            {
+                'place_id': '2',
+                'rating': 3.0,
+                'source_predictions': {
+                    'autoencoder': 0.6,
+                    'svd': 0.5,
+                    'transfer': 0.55,
+                    'madrid_transfer': 0.65
+                }
+            }
+        ]
+        
+        # Train the metalearner
+        self.recommender.train_metalearner(user_feedback)
+        
+        # Check that metalearner is trained
+        self.assertTrue(self.recommender.is_metalearner_trained)
+        self.assertIsNotNone(self.recommender.metalearner.coef_)
+
+    @patch('planwise.src.recommenders.meta_learner_ensemble.MetaEnsembleRecommender.initialize_models')
+    def test_get_recommendations(self, mock_init):
+        """Test the main recommendation function."""
+        # Setup recommender with mock models
         self.recommender.autoencoder_recommender = MagicMock()
         self.recommender.svd_recommender = MagicMock()
         self.recommender.transfer_recommender = MagicMock()
         self.recommender.madrid_transfer_recommender = MagicMock()
+        
+        # Configure mock return values
         self.recommender.autoencoder_recommender.get_recommendations.return_value = self.auto_recs
         self.recommender.svd_recommender.get_recommendations.return_value = self.svd_recs
         self.recommender.transfer_recommender.get_recommendations.return_value = self.transfer_recs
-        self.recommender.madrid_transfer_recommender.get_recommendations.return_value = []
+        self.recommender.madrid_transfer_recommender.get_recommendations.return_value = self.madrid_transfer_recs
         self.recommender.autoencoder_recommender.places_df = self.test_df
         
         # Get recommendations
         recommendations = self.recommender.get_recommendations(
-            self.user_lat, 
+            self.user_lat,
             self.user_lng,
             self.user_prefs,
             self.predicted_ratings_dict,
@@ -160,32 +201,39 @@ class TestEnsembleRecommender(unittest.TestCase):
             expected_fields = ['place_id', 'name', 'score', 'source']
             for field in expected_fields:
                 self.assertTrue(all(field in rec for rec in recommendations))
+            
+            # Check that recommendations are unique
+            place_ids = [rec['place_id'] for rec in recommendations]
+            self.assertEqual(len(place_ids), len(set(place_ids)))
+
+    def test_standardize_recommendation(self):
+        """Test the recommendation standardization function."""
+        test_rec = {
+            'place_id': '1',
+            'name': 'Test Place',
+            'score': 0.8,
+            'category': 'restaurant',
+            'rating': 4.5,
+            'user_ratings_total': 100,
+            'distance': 500,
+            'lat': 40.416775,
+            'lng': -3.703790,
+            'types': ['restaurant', 'bar']
+        }
         
-    @patch('planwise.src.recommenders.ensemble_recommender.EnsembleRecommender.initialize_models')
-    def test_empty_recommendations(self, mock_init):
-        """Test behavior with empty recommendation lists."""
-        # Setup recommender with empty results
-        self.recommender.autoencoder_recommender = MagicMock()
-        self.recommender.svd_recommender = MagicMock()
-        self.recommender.transfer_recommender = MagicMock()
-        self.recommender.madrid_transfer_recommender = MagicMock()
-        self.recommender.autoencoder_recommender.get_recommendations.return_value = []
-        self.recommender.svd_recommender.get_recommendations.return_value = []
-        self.recommender.transfer_recommender.get_recommendations.return_value = []
-        self.recommender.madrid_transfer_recommender.get_recommendations.return_value = []
-        self.recommender.autoencoder_recommender.places_df = self.test_df
+        standardized = self.recommender._standardize(test_rec, 'test_source')
         
-        # Get recommendations
-        recommendations = self.recommender.get_recommendations(
-            self.user_lat,
-            self.user_lng,
-            self.user_prefs,
-            self.predicted_ratings_dict,
-            num_recs=3
-        )
+        # Check all required fields are present
+        required_fields = [
+            'place_id', 'name', 'score', 'category', 'icon',
+            'rating', 'user_ratings_total', 'distance',
+            'lat', 'lng', 'vicinity', 'types', 'source'
+        ]
+        for field in required_fields:
+            self.assertIn(field, standardized)
         
-        # Check that we got no recommendations
-        self.assertEqual(len(recommendations), 0)
+        # Check source is set correctly
+        self.assertEqual(standardized['source'], 'test_source')
 
 if __name__ == '__main__':
     unittest.main() 

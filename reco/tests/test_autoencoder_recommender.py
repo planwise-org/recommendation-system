@@ -1,20 +1,11 @@
 import unittest
 import pandas as pd
 import numpy as np
-import sys
-import os
 import math
-from pathlib import Path
-from unittest.mock import patch, MagicMock, Mock
-
-# Add the parent directory to the Python path to be able to import modules
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-# Add streamlit directory to path to allow imports from there
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('planwise')))
+from unittest.mock import patch
 
 # Now import after adding the path
-from planwise.src.recommenders.autoencoder_recommender import AutoencoderRecommender
+from planwise.src.recommenders import AutoencoderRecommender
 
 # Define helper functions here instead of importing them
 def haversine(lat1, lon1, lat2, lon2):

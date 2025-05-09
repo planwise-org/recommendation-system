@@ -9,13 +9,6 @@ import sys
 import os
 from pathlib import Path
 
-# Add the parent directory to the Python path to be able to import modules
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-# Add the streamlit directory to the path
-streamlit_dir = str(Path(__file__).resolve().parent.parent.joinpath('planwise'))
-sys.path.insert(0, streamlit_dir)
-
 def run_tests():
     """Discover and run all tests in the tests directory."""
     # Import conftest to set up path properly
