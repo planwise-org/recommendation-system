@@ -1,19 +1,12 @@
 import unittest
 import pandas as pd
 import numpy as np
-import sys
 import os
-from pathlib import Path
+import joblib
 from unittest.mock import patch, MagicMock
 
-# Add the parent directory to the Python path to be able to import modules
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-# Add streamlit directory to path to allow imports from there
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('planwise')))
-
 # Now import the module
-from planwise.src.recommenders.transfer_recommender import TransferRecommender
+from planwise.src.recommenders import TransferRecommender
 
 class TestTransferRecommender(unittest.TestCase):
     

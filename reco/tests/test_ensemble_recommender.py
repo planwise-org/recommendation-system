@@ -1,20 +1,10 @@
 import unittest
 import pandas as pd
-import numpy as np
-import sys
-import os
 import math
-from pathlib import Path
 from unittest.mock import patch, MagicMock, Mock
 
-# Add the parent directory to the Python path to be able to import modules
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-# Add planwise directory to path to allow imports from there
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('planwise')))
-
 # Now import the module
-from planwise.src.recommenders.ensemble_recommender import EnsembleRecommender
+from planwise.src.recommenders import EnsembleRecommender
 
 class TestEnsembleRecommender(unittest.TestCase):
     """Test suite for the EnsembleRecommender class."""

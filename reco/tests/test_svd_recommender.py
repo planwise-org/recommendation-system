@@ -1,19 +1,8 @@
 import unittest
 import pandas as pd
-import numpy as np
-import sys
-import os
-import math
-from pathlib import Path
-
-# Add the parent directory to the Python path to be able to import modules
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-# Add streamlit directory to path to allow imports from there
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.joinpath('planwise')))
 
 # Now import the module
-from planwise.src.recommenders.svd_recommender import SVDPlaceRecommender
+from planwise.src.recommenders import SVDPlaceRecommender
 
 class TestSVDPlaceRecommender(unittest.TestCase):
     

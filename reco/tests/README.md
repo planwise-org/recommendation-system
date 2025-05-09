@@ -10,25 +10,29 @@ This directory contains unit tests for the recommendation system components. The
 
 ## Running Tests
 
+### Important Note on Test Location
+
+Before anything, go to the `reco` folder to run this test suite. The folder is the parent directory of this `tests`folder, and this is necessary for correct module import and path resolution.
+
 ### Running All Tests
 
 To run all tests at once, use the `run_tests.py` script:
 
 ```bash
-python reco/tests/run_tests.py
+python /tests/run_tests.py
 ```
 
-This will discover and run all test files in the directory.
 
 ### Running Individual Test Files
 
 You can also run individual test files directly:
 
 ```bash
-python -m reco.tests.test_svd_recommender
-python -m reco.tests.test_transfer_recommender
-python -m reco.tests.test_autoencoder_recommender
-python -m reco.tests.test_ensemble_recommender
+python -m tests.test_svd_recommender
+python -m tests.test_transfer_recommender
+python -m tests.test_autoencoder_recommender
+python -m tests.test_ensemble_recommender
+python -m tests.test_meta_learner_ensemble
 ```
 
 ### Running Specific Test Cases
@@ -36,7 +40,7 @@ python -m reco.tests.test_ensemble_recommender
 To run specific test cases, you can use the unittest framework directly:
 
 ```bash
-python -m unittest reco.tests.test_svd_recommender.TestSVDPlaceRecommender.test_haversine_distance
+python -m unittest tests.test_svd_recommender.TestSVDPlaceRecommender.test_haversine_distance
 ```
 
 ## Test Coverage
